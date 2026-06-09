@@ -1276,7 +1276,7 @@ const IDLE_SETTINGS = {
   spinAmt:1, axisPull:0, axisNth:4, fixAxis:false, fixSize:false,
   stabilize:false, stabilizePos:false, fmt:'sq', bgClass:'dark', colorKey:'gray'
 };
-const SEQ_IDLE_FRAMES = 55, SEQ_HOLD_FRAMES = 90;
+const SEQ_IDLE_FRAMES = 60, SEQ_HOLD_FRAMES = 180;
 let seqActive=false, seqAllPresets=false, seqAllIndex=0;
 let seqPresetId=null, seqPhase='idle1', seqTimer=0;
 
@@ -1502,7 +1502,7 @@ function renderPresets() {
       stop.append(sdot, sname);
       const smeta = document.createElement('div'); smeta.className='pcard-meta';
       const seqStatus = (seqActive && seqPresetId===p.id) ? ` · ${{idle1:'idle…',morph_to:'→★',hold_preset:'★',morph_back:'★→'}[seqPhase]||''}` : '';
-      smeta.textContent=`seq · ~6s${seqStatus}`;
+      smeta.textContent=`seq · ~13s${seqStatus}`;
       sbody.append(stop, smeta);
 
       const sjson = document.createElement('button');
@@ -1746,7 +1746,7 @@ function morphPhaseFrames(fromFrames, toFrames, nFrames) {
 function exportSequenceLottie(presetId) {
   const p = presets.find(x => x.id === presetId); if (!p) return;
   const fps = 30;
-  const IDLE_F=45, MORPH_F=45, HOLD_F=90;
+  const IDLE_F=60, MORPH_F=45, HOLD_F=180;
   const TOTAL_F = IDLE_F*2 + MORPH_F*2 + HOLD_F;
 
   const idleS  = Object.assign({}, IDLE_SETTINGS);
