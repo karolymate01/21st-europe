@@ -1039,13 +1039,15 @@ function exportLottie() {
   const exportCount = isSoloAnim ? (_miniEC[currentAnim]||1) : starCount;
   const starData = Array.from({length: exportCount}, () => []);
 
-  for (let f = 0; f < totalFrames; f++) {
+  const KF_STEP = 2; // sample every 2nd frame → halves keyframe count
+  for (let f = 0; f < totalFrames; f += KF_STEP) {
     t = savedT + f * tStep;
     const savedStyle = animStyleForGetParams;
     animStyleForGetParams = currentAnim;
     for (let i = 0; i < exportCount; i++) {
       const p = getStarParams(i, 1.0);
       starData[i].push({
+        frame: f,
         x: p.x,
         y: p.y,
         rot: (p.rot || 0) * 180 / Math.PI,          // radians → degrees
@@ -1063,19 +1065,20 @@ function exportLottie() {
   const fillC = [pal.r/255, pal.g/255, pal.b/255, 1];
   const bgHex = {'bg-dark':'#0e0e0f','bg-mid':'#1e1e20','bg-light':'#f0f0ec','bg-white':'#ffffff'};
 
-  // Helper: linear keyframes array for a multi-value prop (position/scale)
+  // Helper: keyframes array for a multi-value prop (position/scale)
+  // Uses d.frame for absolute time; ease-in-out handles for smooth interpolation
   function vecKF(frames, getter) {
-    return frames.map((d, f) => {
-      const kf = {t: f, s: getter(d)};
-      if (f < frames.length - 1) { kf.i = {x:[1],y:[1]}; kf.o = {x:[0],y:[0]}; }
+    return frames.map((d, idx) => {
+      const kf = {t: d.frame ?? idx, s: getter(d)};
+      if (idx < frames.length - 1) { kf.i = {x:[0.5],y:[0.5]}; kf.o = {x:[0.5],y:[0.5]}; }
       return kf;
     });
   }
-  // Helper: linear keyframes for scalar prop (rotation/opacity)
+  // Helper: keyframes for scalar prop (rotation/opacity)
   function scalarKF(frames, getter) {
-    return frames.map((d, f) => {
-      const kf = {t: f, s: [getter(d)]};
-      if (f < frames.length - 1) { kf.i = {x:[1],y:[1]}; kf.o = {x:[0],y:[0]}; }
+    return frames.map((d, idx) => {
+      const kf = {t: d.frame ?? idx, s: [getter(d)]};
+      if (idx < frames.length - 1) { kf.i = {x:[0.5],y:[0.5]}; kf.o = {x:[0.5],y:[0.5]}; }
       return kf;
     });
   }
@@ -1768,18 +1771,30 @@ function exportSequenceLottie(presetId) {
   const bgColor = bgHex[idleS.bgClass] || '#0e0e0f';
 
   function vecKF(frames, getter) {
-    return frames.map((d, f) => {
-      const kf = {t: f, s: getter(d)};
-      if (f < frames.length-1) { kf.i={x:[1],y:[1]}; kf.o={x:[0],y:[0]}; }
-      return kf;
-    });
+    const step = 2;
+    const result = [];
+    for (let idx = 0; idx < frames.length; idx += step) {
+      const kf = {t: idx, s: getter(frames[idx])};
+      if (idx + step < frames.length) { kf.i={x:[0.5],y:[0.5]}; kf.o={x:[0.5],y:[0.5]}; }
+      result.push(kf);
+    }
+    if ((frames.length-1) % step !== 0) {
+      result.push({t: frames.length-1, s: getter(frames[frames.length-1])});
+    }
+    return result;
   }
   function scalarKF(frames, getter) {
-    return frames.map((d, f) => {
-      const kf = {t: f, s: [getter(d)]};
-      if (f < frames.length-1) { kf.i={x:[1],y:[1]}; kf.o={x:[0],y:[0]}; }
-      return kf;
-    });
+    const step = 2;
+    const result = [];
+    for (let idx = 0; idx < frames.length; idx += step) {
+      const kf = {t: idx, s: [getter(frames[idx])]};
+      if (idx + step < frames.length) { kf.i={x:[0.5],y:[0.5]}; kf.o={x:[0.5],y:[0.5]}; }
+      result.push(kf);
+    }
+    if ((frames.length-1) % step !== 0) {
+      result.push({t: frames.length-1, s: [getter(frames[frames.length-1])]});
+    }
+    return result;
   }
 
   const layers = [];
