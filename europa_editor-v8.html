@@ -207,6 +207,7 @@ canvas { display: block; }
                 <button class="pill on" onclick="setAnim('spin')">Spin</button>
                 <button class="pill"    onclick="setAnim('drift')">Drift</button>
                 <button class="pill"    onclick="setAnim('wave')">Wave</button>
+                <button class="pill"    onclick="setAnim('speaker')">Speaker</button>
               </div>
               <div style="padding-top:8px;display:flex;flex-wrap:wrap;gap:5px;padding-bottom:6px">
                 <button class="pill" id="stabilizeBtn" onclick="toggleStabilize()" title="Lock rotation">🔒 Rotation</button>
@@ -499,7 +500,7 @@ function setAnim(a) {
   if (miniTrio.has(a)) openAnimGroup('trio');
   else openAnimGroup('field');
 }
-const animLabels = {organic:'organic',pulse:'pulse',spin:'spin',drift:'drift',wave:'wave','solo-circle':'cw','mini-ccw':'ccw','mini-ellipse':'ellipse','mini-duo':'duo','solo-dots':'scatter','mini-figure8':'figure 8','mini-float':'float','mini-bounce':'bounce','solo-fade':'fade','mini-breathe':'breathe','mini-blink':'blink','mini-beat':'beat','mini-arc':'arc-s','mini-arc-wide':'arc-l','mini-sweep':'sweep','mini-ring':'ring','mini-chase':'chase','mini-ripple':'fill out','mini-ring-out':'ring out','mini-fill-ring':'fill+ring','mini-ping':'ping','mini-trio-bounce':'bounce','mini-trio-wave':'wave','mini-trio-fade':'fade','mini-trio-orbit':'orbit','mini-trio-triangle':'triangle'};
+const animLabels = {organic:'organic',pulse:'pulse',spin:'spin',drift:'drift',wave:'wave',speaker:'speaker','solo-circle':'cw','mini-ccw':'ccw','mini-ellipse':'ellipse','mini-duo':'duo','solo-dots':'scatter','mini-figure8':'figure 8','mini-float':'float','mini-bounce':'bounce','solo-fade':'fade','mini-breathe':'breathe','mini-blink':'blink','mini-beat':'beat','mini-arc':'arc-s','mini-arc-wide':'arc-l','mini-sweep':'sweep','mini-ring':'ring','mini-chase':'chase','mini-ripple':'fill out','mini-ring-out':'ring out','mini-fill-ring':'fill+ring','mini-ping':'ping','mini-trio-bounce':'bounce','mini-trio-wave':'wave','mini-trio-fade':'fade','mini-trio-orbit':'orbit','mini-trio-triangle':'triangle'};
 function animLabel(a) { return animLabels[a] || a; }
 
 function toggleStabilize()   { stabilize    = !stabilize;    document.getElementById('stabilizeBtn')   .classList.toggle('on', stabilize); }
@@ -586,7 +587,7 @@ function loop() {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function lerpAngle(a, b, t) { let d=b-a; while(d>Math.PI)d-=Math.PI*2; while(d<-Math.PI)d+=Math.PI*2; return a+d*t; }
-const ORBIT_STYLES = new Set(['organic','pulse','spin','drift','wave','solo-circle','solo-dots','solo-fade','mini-ccw','mini-ellipse','mini-duo','mini-figure8','mini-float','mini-bounce','mini-breathe','mini-blink','mini-beat','mini-arc','mini-arc-wide','mini-sweep','mini-ring','mini-chase','mini-ripple','mini-ping','mini-ring-out','mini-fill-ring','mini-trio-bounce','mini-trio-wave','mini-trio-fade','mini-trio-orbit','mini-trio-triangle']);
+const ORBIT_STYLES = new Set(['organic','pulse','spin','drift','wave','speaker','solo-circle','solo-dots','solo-fade','mini-ccw','mini-ellipse','mini-duo','mini-figure8','mini-float','mini-bounce','mini-breathe','mini-blink','mini-beat','mini-arc','mini-arc-wide','mini-sweep','mini-ring','mini-chase','mini-ripple','mini-ping','mini-ring-out','mini-fill-ring','mini-trio-bounce','mini-trio-wave','mini-trio-fade','mini-trio-orbit','mini-trio-triangle']);
 function isOrbitStyle(s) { return ORBIT_STYLES.has(s); }
 
 // Temporarily compute getStarParams using playbackToSettings globals
@@ -944,6 +945,23 @@ function getStarParams(i, eb) {
     const pWave4 = Math.sin(t*0.3+i);
     sz = fixSize ? baseSize : baseSize+pWave4*3*pulseAmt;
     fa = (0.2+Math.sin(t*0.4+i*0.5)*0.1+spk*0.25) * (fixSize ? 1 : (1 + pWave4 * 0.4 * pulseAmt));
+  } else if (style === 'speaker') {
+    // AI-speaker ring: travelling wave around a circle, stars pulse in/out
+    const angle = (i / starCount) * Math.PI * 2 - Math.PI / 2;
+    // 2-3 wave peaks travelling CCW around the ring
+    const travelPhase = angle * 3 - t * 2.4 * (speedMult || 1);
+    const wave = Math.sin(travelPhase);
+    // Slow breathing envelope
+    const breathe = 1 + Math.sin(t * 0.7 * (speedMult || 1)) * 0.18 * movementAmp;
+    const radialPush = wave * orbitRadius * 0.28 * pulseAmt;
+    const r = (orbitRadius * breathe + radialPush);
+    const ri = getAxisPullRadius(i, r);
+    x = CX + Math.cos(angle) * ri;
+    y = CY + Math.sin(angle) * ri;
+    rot = stabilize ? angle + Math.PI / 2 : angle + Math.PI / 2 + t * 0.08 * (spinAmt || 1);
+    const waveSz = 0.5 + (wave * 0.5 + 0.5) * 0.85; // 0.5 – 1.0 range
+    sz = fixSize ? baseSize : baseSize * waveSz * (0.85 + spk * 0.25) * (0.9 + pulseAmt * 0.1);
+    fa = (0.25 + (wave * 0.5 + 0.5) * 0.55) * (fixSize ? 1 : (1 + spk * 0.4));
   } else { // wave
     const wave = Math.sin(t*1.5+i*(Math.PI*2/starCount)*2)*amp;
     x = base.x+Math.cos((i/starCount)*Math.PI*2)*wave*0.3;
@@ -1301,7 +1319,7 @@ async function downloadBuiltinLottie(id) {
 let deletedBuiltins = new Set(JSON.parse(localStorage.getItem('deletedBuiltins')||'[]'));
 
 let presets = [], activePresetId = null;
-const aLabelShort = {morph:'morph',fullfield:'field',organic:'org',pulse:'pulse',spin:'spin',drift:'drift',wave:'wave',grid:'grid',web:'web',breathe:'breathe',vortex:'vortex',scatter:'scatter',ripple:'ripple',constellation:'const',flow:'flow'};
+const aLabelShort = {morph:'morph',fullfield:'field',organic:'org',pulse:'pulse',spin:'spin',drift:'drift',wave:'wave',speaker:'spk',grid:'grid',web:'web',breathe:'breathe',vortex:'vortex',scatter:'scatter',ripple:'ripple',constellation:'const',flow:'flow'};
 
 function captureSettings() {
   return { fmt, bgClass, colorKey, currentAnim, opacity, speedMult, movementAmp,
