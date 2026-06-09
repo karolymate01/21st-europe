@@ -80,6 +80,8 @@ body { display: flex; font-family: 'DM Sans', sans-serif; color: var(--text); fo
 .pcard-thumb-wrap { width: 52px; flex-shrink: 0; overflow: hidden; background: #0a0a0b; }
 .pcard-thumb { width: 52px; height: 52px; display: block; object-fit: cover; opacity: 0.8; }
 .pcard-thumb-empty { width: 52px; height: 52px; background: var(--panel); }
+.pcard-lottie-thumb { width: 52px; height: 52px; background: #111; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; }
+.pcard-lottie-thumb .lottie-loading { font-size:9px; color: var(--text3); font-family: 'DM Mono',monospace; }
 .pcard-body { flex: 1; min-width: 0; padding: 8px 9px; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
 .pcard-top { display: flex; align-items: center; gap: 6px; }
 .pcard-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -129,6 +131,7 @@ canvas { display: block; }
 .anim-group-body { overflow:hidden; transition:max-height 0.25s ease; }
 </style>
 <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
 </head>
 <body>
 
@@ -1370,8 +1373,16 @@ function renderPresets() {
     card.style.opacity = '0.85';
 
     const thumbWrap = document.createElement('div'); thumbWrap.className='pcard-thumb-wrap';
-    const empty = document.createElement('div'); empty.className='pcard-thumb-empty';
-    thumbWrap.appendChild(empty);
+    const lottieThumb = document.createElement('div'); lottieThumb.className='pcard-lottie-thumb';
+    lottieThumb.innerHTML='<span class="lottie-loading">…</span>';
+    thumbWrap.appendChild(lottieThumb);
+    (async () => {
+      try {
+        const data = await decompressB64GZ(p.gz);
+        lottieThumb.innerHTML = '';
+        lottie.loadAnimation({ container: lottieThumb, renderer: 'svg', loop: true, autoplay: true, animationData: data });
+      } catch(e) { lottieThumb.innerHTML='<span class="lottie-loading">err</span>'; }
+    })();
 
     const body = document.createElement('div'); body.className='pcard-body';
     const top = document.createElement('div'); top.className='pcard-top';
