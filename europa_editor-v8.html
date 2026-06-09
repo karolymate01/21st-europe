@@ -1425,103 +1425,56 @@ function renderPresets() {
     return;
   }
 
+  // ── Sequence cards only ──
   presets.forEach(p => {
     const s = p.settings;
-    const card = document.createElement('div');
-    card.className = 'pcard' + (p.id===activePresetId?' active':'');
+    const sc = document.createElement('div');
+    sc.className = 'pcard' + (seqActive && seqPresetId===p.id ? ' active' : (p.id===activePresetId?' active':''));
 
-    const thumbWrap = document.createElement('div'); thumbWrap.className='pcard-thumb-wrap';
+    const sThumb = document.createElement('div'); sThumb.className='pcard-thumb-wrap';
+    sThumb.style.position='relative';
     if (p.thumbnail) {
       const img = document.createElement('img'); img.src=p.thumbnail; img.className='pcard-thumb';
-      thumbWrap.appendChild(img);
+      sThumb.appendChild(img);
     } else {
-      const empty = document.createElement('div'); empty.className='pcard-thumb-empty';
-      thumbWrap.appendChild(empty);
+      const emp = document.createElement('div'); emp.className='pcard-thumb-empty'; sThumb.appendChild(emp);
     }
+    const ov = document.createElement('div');
+    ov.style.cssText="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;color:rgba(255,255,255,0.45);font-family:'DM Mono',monospace;pointer-events:none;";
+    ov.textContent='↺';
+    sThumb.appendChild(ov);
 
-    const body = document.createElement('div'); body.className='pcard-body';
-    const top = document.createElement('div'); top.className='pcard-top';
-    const dot = document.createElement('div'); dot.className='pcard-dot'; dot.style.background=pcColor(s.colorKey);
-    const name = document.createElement('span'); name.className='pcard-name'; name.textContent=p.name; name.title=p.name;
-    const del = document.createElement('button'); del.className='pcard-del'; del.textContent='×';
-    del.onclick=e=>{e.stopPropagation();if(confirm('Delete?')){deletePreset(p.id);}};
-    top.append(dot, name, del);
-    const meta = document.createElement('div'); meta.className='pcard-meta';
-    const seqLabel = (seqActive && seqPresetId===p.id) ? ` · ${{idle1:'idle…',morph_to:'→★',hold_preset:'★',morph_back:'★→'}[seqPhase]||'seq'}` : '';
-    meta.textContent=`${fmtMap[s.fmt]||s.fmt} · ${aLabelShort[s.currentAnim||s.idleAnim]||s.currentAnim||'spin'}${seqLabel}`;
-    body.append(top, meta);
+    const sbody = document.createElement('div'); sbody.className='pcard-body';
+    const stop2 = document.createElement('div'); stop2.className='pcard-top';
+    const sdot = document.createElement('div'); sdot.className='pcard-dot'; sdot.style.background=pcColor(s.colorKey);
+    const sname = document.createElement('span'); sname.className='pcard-name';
+    sname.textContent=p.name; sname.title=p.name;
+    const sdel = document.createElement('button'); sdel.className='pcard-del'; sdel.textContent='×';
+    sdel.onclick=e=>{e.stopPropagation();if(confirm('Delete?')){deletePreset(p.id);}};
+    stop2.append(sdot, sname, sdel);
+    const smeta = document.createElement('div'); smeta.className='pcard-meta';
+    const seqStatus = (seqActive && seqPresetId===p.id) ? ` · ${{idle1:'idle…',morph_to:'→★',hold_preset:'★',morph_back:'★→'}[seqPhase]||''}` : '';
+    smeta.textContent=`${fmtMap[s.fmt]||s.fmt} · ${aLabelShort[s.currentAnim||s.idleAnim]||s.currentAnim||'spin'} · seq${seqStatus}`;
+    sbody.append(stop2, smeta);
 
-    const lottieBtn = document.createElement('button');
-    lottieBtn.className = 'pcard-lottie'; lottieBtn.innerHTML = '↓<br>json';
-    lottieBtn.title = 'Export as Lottie JSON';
-    lottieBtn.onclick = e => { e.stopPropagation(); exportLottieFromPreset(p.id); };
+    const sjson = document.createElement('button');
+    sjson.className='pcard-lottie'; sjson.innerHTML='↓<br>json';
+    sjson.title='Export sequence as Lottie JSON';
+    sjson.onclick=e=>{e.stopPropagation(); exportSequenceLottie(p.id);};
 
-    const playBtn = document.createElement('button');
-    playBtn.className = 'pcard-play';
-    playBtn.innerHTML = `&#9654;<br><span style="font-size:9px;font-family:'DM Mono',monospace;opacity:0.55;letter-spacing:0.04em">load</span>`;
-    playBtn.style.flexDirection = 'column';
-    playBtn.title = 'Load preset';
-    playBtn.onclick = e => { e.stopPropagation(); loadPresetWithMorph(p.id); };
+    const isThisSeq = seqActive && seqPresetId===p.id;
+    const splay = document.createElement('button');
+    splay.className='pcard-play'+(isThisSeq?' playing':'');
+    splay.innerHTML=isThisSeq?'&#9646;&#9646;':`&#9654;<br><span style="font-size:9px;font-family:'DM Mono',monospace;opacity:0.55;letter-spacing:0.04em">seq</span>`;
+    splay.style.flexDirection='column';
+    splay.title=isThisSeq?'Stop':'Play sequence';
+    splay.onclick=e=>{e.stopPropagation(); if(isThisSeq) stopSequence(); else playSequence(p.id);};
 
-    card.append(thumbWrap, body, lottieBtn, playBtn);
-    card.title = 'Click to load';
-    card.addEventListener('click', ()=>loadPresetWithMorph(p.id));
-    panel.appendChild(card);
+    sc.append(sThumb, sbody, sjson, splay);
+    sc.title='Click to load preset';
+    sc.addEventListener('click', ()=>loadPresetWithMorph(p.id));
+    panel.appendChild(sc);
   });
-
-  // ── Sequence cards (idle → preset → idle) ──
-  if (presets.length > 0) {
-    const seqLabel = document.createElement('div');
-    seqLabel.className = 'pcard-seq-label';
-    seqLabel.textContent = 'sequences';
-    panel.appendChild(seqLabel);
-
-    presets.forEach(p => {
-      const s = p.settings;
-      const sc = document.createElement('div');
-      sc.className = 'pcard' + (seqActive && seqPresetId===p.id ? ' active' : '');
-
-      const sThumb = document.createElement('div'); sThumb.className='pcard-thumb-wrap';
-      sThumb.style.position='relative';
-      if (p.thumbnail) {
-        const img = document.createElement('img'); img.src=p.thumbnail; img.className='pcard-thumb';
-        sThumb.appendChild(img);
-      } else {
-        const emp = document.createElement('div'); emp.className='pcard-thumb-empty'; sThumb.appendChild(emp);
-      }
-      const ov = document.createElement('div');
-      ov.style.cssText="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;color:rgba(255,255,255,0.45);font-family:'DM Mono',monospace;pointer-events:none;";
-      ov.textContent='↺';
-      sThumb.appendChild(ov);
-
-      const sbody = document.createElement('div'); sbody.className='pcard-body';
-      const stop = document.createElement('div'); stop.className='pcard-top';
-      const sdot = document.createElement('div'); sdot.className='pcard-dot'; sdot.style.background='#444';
-      const sname = document.createElement('span'); sname.className='pcard-name';
-      sname.textContent=`idle · ${p.name} · idle`; sname.title=sname.textContent;
-      stop.append(sdot, sname);
-      const smeta = document.createElement('div'); smeta.className='pcard-meta';
-      const seqStatus = (seqActive && seqPresetId===p.id) ? ` · ${{idle1:'idle…',morph_to:'→★',hold_preset:'★',morph_back:'★→'}[seqPhase]||''}` : '';
-      smeta.textContent=`seq · ~13s${seqStatus}`;
-      sbody.append(stop, smeta);
-
-      const sjson = document.createElement('button');
-      sjson.className='pcard-lottie'; sjson.innerHTML='↓<br>json';
-      sjson.title='Export sequence as Lottie JSON';
-      sjson.onclick=e=>{e.stopPropagation(); exportSequenceLottie(p.id);};
-
-      const isThisSeq = seqActive && seqPresetId===p.id;
-      const splay = document.createElement('button');
-      splay.className='pcard-play'+(isThisSeq?' playing':'');
-      splay.innerHTML=isThisSeq?'&#9646;&#9646;':`&#9654;<br><span style="font-size:9px;font-family:'DM Mono',monospace;opacity:0.55;letter-spacing:0.04em">seq</span>`;
-      splay.style.flexDirection='column';
-      splay.title=isThisSeq?'Stop':'Play sequence';
-      splay.onclick=e=>{e.stopPropagation(); if(isThisSeq) stopSequence(); else playSequence(p.id);};
-
-      sc.append(sThumb, sbody, sjson, splay);
-      panel.appendChild(sc);
-    });
-  }
 }
 
 function showEditorSaveInput() {
