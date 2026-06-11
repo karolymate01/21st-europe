@@ -936,7 +936,7 @@ function getStarParams(i, eb) {
     const spinR = getAxisPullRadius(i, orbitRadius);
     x = CX+Math.cos(a2)*spinR; y = CY+Math.sin(a2)*spinR;
     rot = stabilize ? i*0.5 : t*1.2*(1+spinAmt)+i*0.5;
-    const pWave3 = Math.sin(t*2+i);
+    const pWave3 = fixAxis ? Math.sin(t*1.8) : Math.sin(t*2+i); // sync pulse when axis locked
     sz = fixSize ? baseSize : baseSize+pWave3*2*pulseAmt;
     fa = (0.35+spk*0.3) * (fixSize ? 1 : (1 + pWave3 * 0.5 * pulseAmt));
   } else if (style === 'drift') {
@@ -988,7 +988,7 @@ function getStarParams(i, eb) {
     sz = fixSize ? baseSize : baseSize*(0.8+pWave5*0.4*pulseAmt);
     fa = (0.25+Math.abs(Math.sin(t*2.5+i))*0.5) * (fixSize ? 1 : (1 + pWave5 * 0.45 * pulseAmt));
   }
-  return { x, y, rot: fixAxis ? 0 : rot, sz, fa };
+  return { x, y, rot: fixAxis ? 0 : rot, sz, fa, ...(fixAxis ? {strokeFa: 0} : {}) };
 }
 
 function drawOrbitPositionMorph(eb) {
@@ -1310,8 +1310,8 @@ const BUILTIN_LOTTIE = [
 // Canvas settings that reproduce the idle (spin v6) animation
 const IDLE_SETTINGS = {
   currentAnim:'spin', starCount:12, baseSize:11, orbitRadius:105,
-  innerRatio:0.55, opacity:1, speedMult:1, movementAmp:0, pulseAmt:0,
-  spinAmt:1, axisPull:0, axisNth:4, fixAxis:false, fixSize:false,
+  innerRatio:0.55, opacity:1, speedMult:1, movementAmp:0, pulseAmt:0.5,
+  spinAmt:1, axisPull:0, axisNth:4, fixAxis:true, fixSize:false,
   stabilize:false, stabilizePos:false, fmt:'sq', bgClass:'dark', colorKey:'gray'
 };
 const SEQ_IDLE_FRAMES = 120, SEQ_HOLD_FRAMES = 360;
