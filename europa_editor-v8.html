@@ -1450,6 +1450,12 @@ function renderPresets() {
       iplayBtn.disabled = !hasPresets;
       iplayBtn.onclick = e => { e.stopPropagation(); if(presets.length>1) playAll(); else if(presets.length===1) playSequence(presets[0].id); };
     }
+    ic.onclick = e => {
+      if (e.target === iplayBtn || iplayBtn.contains(e.target)) return;
+      if (e.target === ijsonBtn || ijsonBtn.contains(e.target)) return;
+      applySettings(IDLE_SETTINGS); currentAnim = 'spin';
+      activePresetId = null; renderPresets();
+    };
     ic.append(ithumb, ibody, ijsonBtn, iplayBtn);
     panel.appendChild(ic);
   }
