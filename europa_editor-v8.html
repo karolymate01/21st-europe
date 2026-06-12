@@ -272,7 +272,7 @@ canvas { display: block; }
             <input type="range" min="20" max="160" step="1" value="88" id="radiusSlider">
             <span class="val" id="radiusVal">88</span>
           </div>
-          <div class="ctrl">
+          <div class="ctrl" style="display:none">
             <label>Sharpness</label>
             <input type="range" min="20" max="70" step="1" value="42" id="innerSlider">
             <span class="val" id="innerVal">0.42</span>
@@ -610,17 +610,26 @@ function computeToParams(i) {
   return p;
 }
 
+// ── Custom star shape (Star_21st.svg) ──
+const STAR_PATH_D = 'M43.7982 4.35974C45.8425 -1.45325 54.1575 -1.45325 56.2018 4.35974L63.9359 26.3591C64.8378 28.9234 67.2579 30.6621 70.0039 30.7174L93.5564 31.1919C99.7804 31.3174 102.35 39.1359 97.3889 42.8539L78.6169 56.9247C76.429 58.5649 75.5041 61.3782 76.2993 63.9767L83.1207 86.2689C84.9237 92.1594 78.1959 96.9919 73.0872 93.4771L53.7497 80.174C51.4961 78.6227 48.5039 78.6227 46.2503 80.174L26.9128 93.4771C21.8041 96.9919 15.0762 92.1594 16.8793 86.2689L23.7007 63.9767C24.4959 61.3782 23.571 58.5649 21.3831 56.9247L2.61104 42.8539C-2.34993 39.1359 0.219592 31.3174 6.44358 31.1919L29.9961 30.7174C32.7421 30.6621 35.1622 28.9234 36.0641 26.3591Z';
+const STAR21_V=[[-6.2018,-43.1403],[6.2018,-43.1403],[13.9359,-21.1409],[20.0039,-16.7826],[43.5564,-16.3081],[47.3889,-4.6461],[28.6169,9.4247],[26.2993,16.4767],[33.1207,38.7689],[23.0872,45.9771],[3.7497,32.674],[-3.7497,32.674],[-23.0872,45.9771],[-33.1207,38.7689],[-26.2993,16.4767],[-28.6169,9.4247],[-47.389,-4.6461],[-43.5564,-16.3081],[-20.0039,-16.7826],[-13.9359,-21.1409]];
+const STAR21_O=[[2.0443,-5.813],[0,0],[0.9019,2.5643],[0,0],[6.224,0.1255],[0,0],[-2.1879,1.6402],[0,0],[1.803,5.8905],[0,0],[-2.2536,-1.5513],[0,0],[-5.1087,3.5148],[0,0],[0.7952,-2.5985],[0,0],[-4.961,-3.718],[0,0],[2.746,-0.0553],[0,0]];
+const STAR21_I=[[0,0],[-2.0443,-5.813],[0,0],[-2.746,-0.0553],[0,0],[4.9611,-3.718],[0,0],[-0.7952,-2.5985],[0,0],[5.1087,3.5148],[0,0],[2.2536,-1.5513],[0,0],[-1.8031,5.8905],[0,0],[2.1879,1.6402],[0,0],[-6.224,0.1255],[0,0],[-0.9019,2.5643]];
+let _star2D = null;
+function getStarPath2D() { if (!_star2D) _star2D = new Path2D(STAR_PATH_D); return _star2D; }
+
 function drawStar(x, y, ro, ri, rot, fillA, strokeA, sw) {
-  ct.beginPath();
-  for (let j=0;j<10;j++) {
-    const a = (j/10)*Math.PI*2 - Math.PI/2 + rot;
-    const r = j%2===0 ? ro : ri;
-    j===0 ? ct.moveTo(x+Math.cos(a)*r, y+Math.sin(a)*r) : ct.lineTo(x+Math.cos(a)*r, y+Math.sin(a)*r);
-  }
-  ct.closePath();
+  const path = getStarPath2D();
+  const scale = ro / 50;
+  ct.save();
+  ct.translate(x, y);
+  ct.rotate(rot);
+  ct.scale(scale, scale);
+  ct.translate(-50, -47.5);
   const p = palette[colorKey];
-  if (fillA>0)   { ct.fillStyle=`rgba(${p.r},${p.g},${p.b},${fillA*opacity/0.45})`; ct.fill(); }
-  if (strokeA>0) { const sr=Math.min(255,p.r+30),sg=Math.min(255,p.g+30),sb=Math.min(255,p.b+30); ct.strokeStyle=`rgba(${sr},${sg},${sb},${strokeA*opacity/0.45})`; ct.lineWidth=sw; ct.stroke(); }
+  if (fillA > 0) { ct.fillStyle = `rgba(${p.r},${p.g},${p.b},${fillA*opacity/0.45})`; ct.fill(path); }
+  if (strokeA > 0) { const sr=Math.min(255,p.r+30),sg=Math.min(255,p.g+30),sb=Math.min(255,p.b+30); ct.strokeStyle=`rgba(${sr},${sg},${sb},${strokeA*opacity/0.45})`; ct.lineWidth=sw/scale; ct.stroke(path); }
+  ct.restore();
 }
 
 
@@ -1103,13 +1112,10 @@ function exportLottie() {
       shapes: [{
         ty: 'gr', nm: 'star', it: [
           {
-            ty: 'sr', nm: 'star', sy: 1, d: 1,
-            pt: {a:0, k:5},
-            p:  {a:0, k:[0,0]},
-            r:  {a:0, k:-90},          // point upward (matching canvas -PI/2 start)
-            or: {a:0, k: avgSz},
-            ir: {a:0, k: avgSz * innerRatio},
-            is: {a:0, k:0}, os:{a:0, k:0}
+            ty: 'sh', nm: 'star',
+            ks: {a:0, k:{v:STAR21_V.map(([x,y])=>[x*avgSz/50,y*avgSz/50]),
+                          i:STAR21_I.map(([x,y])=>[x*avgSz/50,y*avgSz/50]),
+                          o:STAR21_O.map(([x,y])=>[x*avgSz/50,y*avgSz/50]),c:true}}
           },
           {ty:'fl', nm:'fill', o:{a:0,k:100}, c:{a:0,k:fillC}, r:1},
           {ty:'tr', p:{a:0,k:[0,0]}, a:{a:0,k:[0,0]}, s:{a:0,k:[100,100]},
@@ -1819,8 +1825,7 @@ function exportSequenceLottie(presetId) {
       },
       ao:0,
       shapes:[{ty:'gr',nm:'star',it:[
-        {ty:'sr',nm:'star',sy:1,d:1,pt:{a:0,k:5},p:{a:0,k:[0,0]},r:{a:0,k:-90},
-         or:{a:0,k:avgSz},ir:{a:0,k:avgSz*(IDLE_SETTINGS.innerRatio||0.55)},is:{a:0,k:0},os:{a:0,k:0}},
+        {ty:'sh',nm:'star',ks:{a:0,k:{v:STAR21_V.map(([x,y])=>[x*avgSz/50,y*avgSz/50]),i:STAR21_I.map(([x,y])=>[x*avgSz/50,y*avgSz/50]),o:STAR21_O.map(([x,y])=>[x*avgSz/50,y*avgSz/50]),c:true}}},
         {ty:'fl',nm:'fill',o:{a:0,k:100},c:{a:0,k:fillC},r:1},
         {ty:'tr',p:{a:0,k:[0,0]},a:{a:0,k:[0,0]},s:{a:0,k:[100,100]},r:{a:0,k:0},o:{a:0,k:100},sk:{a:0,k:0},sa:{a:0,k:0}}
       ]}],
