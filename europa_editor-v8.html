@@ -608,6 +608,28 @@ function computeToParams(i) {
   animStyleForGetParams=savedStyle;
   return p;
 }
+// Live FROM params — computes star i using playbackFromSettings at current t
+function computeFromParams(i) {
+  const sv = { starCount, baseSize, orbitRadius, innerRatio, opacity, movementAmp, pulseAmt, spinAmt, axisPull, stabilizePos, stabilize, fixAxis, fixSize };
+  const savedStyle = animStyleForGetParams;
+  const s = playbackFromSettings || {};
+  const fromCount = Math.round(s.starCount ?? starCount);
+  if (i >= fromCount) return null; // star doesn't exist in FROM
+  starCount = fromCount; baseSize = s.baseSize ?? baseSize;
+  orbitRadius = s.orbitRadius ?? orbitRadius; innerRatio = s.innerRatio ?? innerRatio;
+  opacity = s.opacity ?? opacity; movementAmp = s.movementAmp ?? movementAmp;
+  pulseAmt = s.pulseAmt ?? pulseAmt; spinAmt = s.spinAmt ?? spinAmt;
+  axisPull = s.axisPull ?? axisPull; stabilizePos = s.stabilizePos ?? stabilizePos;
+  stabilize = s.stabilize ?? stabilize; fixAxis = s.fixAxis ?? fixAxis; fixSize = s.fixSize ?? fixSize;
+  animStyleForGetParams = playbackFromAnim || 'spin';
+  const p = getStarParams(i, 1.0);
+  starCount=sv.starCount; baseSize=sv.baseSize; orbitRadius=sv.orbitRadius; innerRatio=sv.innerRatio;
+  opacity=sv.opacity; movementAmp=sv.movementAmp; pulseAmt=sv.pulseAmt; spinAmt=sv.spinAmt;
+  axisPull=sv.axisPull; stabilizePos=sv.stabilizePos; stabilize=sv.stabilize; fixAxis=sv.fixAxis; fixSize=sv.fixSize;
+  animStyleForGetParams = savedStyle;
+  return { x: p.x, y: p.y, rot: (p.rot||0), sz: Math.max(0.1, p.sz), fa: p.fa };
+}
+
 
 // ── Custom star shape (Star_21st.svg) ──
 const STAR_PATH_D = 'M43.7982 4.35974C45.8425 -1.45325 54.1575 -1.45325 56.2018 4.35974L63.9359 26.3591C64.8378 28.9234 67.2579 30.6621 70.0039 30.7174L93.5564 31.1919C99.7804 31.3174 102.35 39.1359 97.3889 42.8539L78.6169 56.9247C76.429 58.5649 75.5041 61.3782 76.2993 63.9767L83.1207 86.2689C84.9237 92.1594 78.1959 96.9919 73.0872 93.4771L53.7497 80.174C51.4961 78.6227 48.5039 78.6227 46.2503 80.174L26.9128 93.4771C21.8041 96.9919 15.0762 92.1594 16.8793 86.2689L23.7007 63.9767C24.4959 61.3782 23.571 58.5649 21.3831 56.9247L2.61104 42.8539C-2.34993 39.1359 0.219592 31.3174 6.44358 31.1919L29.9961 30.7174C32.7421 30.6621 35.1622 28.9234 36.0641 26.3591Z';
@@ -1000,47 +1022,44 @@ function getStarParams(i, eb) {
 }
 
 function drawOrbitPositionMorph(eb) {
-  const fromCount = (starMorphFromPos || []).length;
-  const toCount   = (playbackToSettings?.starCount) ? Math.round(playbackToSettings.starCount) : starCount;
+  const fromCount = Math.round((playbackFromSettings?.starCount) ?? starCount);
+  const toCount   = Math.round((playbackToSettings?.starCount)   ?? starCount);
   const drawN     = Math.max(fromCount, toCount);
 
-  // Pre-compute TO params for all destination stars (needed for convergence targets)
-  const toParams = [];
-  for (let i = 0; i < toCount; i++) toParams[i] = computeToParams(i);
-
   for (let i = 0; i < drawN; i++) {
+    // Live positions — both animations keep running during morph
+    const from = computeFromParams(i);                      // null if i >= fromCount
+    const to   = i < toCount ? computeToParams(i) : null;  // null if i >= toCount
+
     let x, y, rot, sz, fa;
 
-    if (i < fromCount && i < toCount) {
-      // Star exists in both: straight position morph
-      const from = starMorphFromPos[i];
-      const to   = toParams[i];
+    if (from && to) {
+      // Star in both: straight position lerp (live, follows both animations)
       x   = lerp(from.x,   to.x,   eb);
       y   = lerp(from.y,   to.y,   eb);
       rot = lerpAngle(from.rot, to.rot, eb);
       sz  = lerp(from.sz,  to.sz,  eb);
       fa  = lerp(from.fa,  to.fa,  eb);
 
-    } else if (i < fromCount) {
-      // Extra FROM star: converge toward the nearest TO star, then vanish
-      const from   = starMorphFromPos[i];
-      const target = toParams[i % toCount]; // merge into nearest TO star
-      x   = lerp(from.x,   target.x, eb);
-      y   = lerp(from.y,   target.y, eb);
+    } else if (from) {
+      // Extra FROM star: flies toward nearest TO star, shrinks out
+      const target = computeToParams(i % toCount);
+      x   = lerp(from.x,  target.x, eb);
+      y   = lerp(from.y,  target.y, eb);
       rot = lerpAngle(from.rot, target.rot, eb);
       sz  = lerp(from.sz, 0, eb);
       fa  = lerp(from.fa, 0, eb);
 
-    } else {
-      // New TO star: emerge from the source star it maps to
-      const source = starMorphFromPos[i % fromCount]; // split off from nearest FROM star
-      const to     = toParams[i];
+    } else if (to) {
+      // New TO star: emerges from nearest FROM star position
+      const source = computeFromParams(i % fromCount);
       x   = lerp(source.x,   to.x,   eb);
       y   = lerp(source.y,   to.y,   eb);
       rot = lerpAngle(source.rot, to.rot, eb);
-      sz  = lerp(0,       to.sz,  eb);
-      fa  = lerp(0,       to.fa,  eb);
-    }
+      sz  = lerp(0,        to.sz,  eb);
+      fa  = lerp(0,        to.fa,  eb);
+
+    } else continue;
 
     if (sz > 0.3) drawStar(x, y, sz, sz * innerRatio, fixAxis ? 0 : rot, fa, 0, 0.9);
     starCurrentPos[i] = {x, y, rot, sz, fa};
