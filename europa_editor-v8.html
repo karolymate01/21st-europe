@@ -130,6 +130,24 @@ canvas { display: block; }
 .anim-group-head:hover { color:var(--text2); }
 .anim-group-arrow { font-size:8px; transition:transform 0.2s; }
 .anim-group-body { overflow:hidden; transition:max-height 0.25s ease; }
+
+/* Chain tab */
+#tab-chain { display: none; flex-direction: column; flex: 1; min-height: 0; }
+#chain-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px 4px; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; scrollbar-color: var(--track) transparent; }
+#chain-bottom { flex-shrink: 0; border-top: 0.5px solid var(--border); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 5px; }
+.ccard { border: 0.5px solid var(--border); border-radius: 5px; background: transparent; display: flex; align-items: stretch; overflow: hidden; transition: border-color 0.15s; }
+.ccard:hover { border-color: var(--border2); background: rgba(255,255,255,0.02); }
+.ccard-num { width: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-family: 'DM Mono', monospace; color: var(--text3); border-right: 0.5px solid var(--border); }
+.ccard-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.ccard-body { flex: 1; min-width: 0; padding: 8px 9px; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.ccard-name { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text2); }
+.ccard-meta { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--text3); }
+.ccard-btns { display: flex; flex-direction: column; border-left: 0.5px solid var(--border); flex-shrink: 0; }
+.ccard-btn { flex: 1; width: 26px; background: none; border: none; color: var(--text3); cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; transition: color 0.12s, background 0.12s; padding: 0; }
+.ccard-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.ccard-btn + .ccard-btn { border-top: 0.5px solid var(--border); }
+#chain-empty { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); text-align: center; padding: 28px 0 8px; line-height: 2; }
+#chain-playing-label { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--accent); text-align: center; min-height: 16px; letter-spacing: 0.05em; }
 </style>
 <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
@@ -144,6 +162,7 @@ canvas { display: block; }
   <div id="sidebar-tabs">
     <button class="stab on" onclick="switchTab('editor')">✏ Editor</button>
     <button class="stab"    onclick="switchTab('presets')">⊞ Presets</button>
+    <button class="stab"    onclick="switchTab('chain')">⛓ Chain</button>
     <button class="stab"    onclick="switchTab('phone')">▭ Phone</button>
   </div>
 
@@ -361,6 +380,22 @@ canvas { display: block; }
     </div>
   </div><!-- end tab-presets -->
 
+  <!-- CHAIN TAB -->
+  <div id="tab-chain">
+    <div id="chain-scroll">
+      <div id="chain-empty" style="display:none">Add states below<br>min. 2 to play</div>
+      <div id="chain-list"></div>
+    </div>
+    <div id="chain-bottom">
+      <div id="chain-playing-label"></div>
+      <button class="export-btn" id="chain-add-btn" onclick="chainAdd()">+ Add current state</button>
+      <div style="display:flex;gap:5px">
+        <button class="export-btn" style="flex:1;margin:0" id="chain-play-btn" onclick="chainPlay()">▶ Play</button>
+        <button class="export-btn" style="flex:1;margin:0" onclick="chainStop()">■ Stop</button>
+      </div>
+    </div>
+  </div><!-- end tab-chain -->
+
 </aside>
 
 <main id="main">
@@ -569,6 +604,24 @@ function loop() {
 
   tickPlayback();
   if (seqActive && !playbackActive) tickSeqHold();
+  if (chainActive && chainHolding && !seqActive) {
+    if (--chainHoldTimer <= 0) {
+      chainHolding = false;
+      const fromIdx = chainToIdx;
+      const toIdx   = (fromIdx + 1) % chainStates.length;
+      chainFromIdx  = fromIdx;
+      chainToIdx    = toIdx;
+      const fS = chainStates[fromIdx], tS = chainStates[toIdx];
+      starMorphFromPos = starCurrentPos.slice(0, fS.settings.starCount || 12).map(q => ({...q}));
+      playbackFromSettings = Object.assign({}, fS.settings);
+      playbackFromAnim     = fS.anim;
+      playbackToSettings   = tS.settings;
+      playbackToAnim       = tS.anim;
+      playbackBlend = 0; playbackHold = 0;
+      playbackActive = true;
+      renderChain();
+    }
+  }
   if (playbackActive && playbackBlend < 1) {
     const eb = easeInOut(Math.max(0, Math.min(1, playbackBlend)));
     drawOrbitPositionMorph(eb);
@@ -1300,15 +1353,18 @@ function switchTab(tab) {
   const isEditor  = tab === 'editor';
   const isPhone   = tab === 'phone';
   const isPresets = tab === 'presets' || isPhone;
+  const isChain   = tab === 'chain';
   document.getElementById('tab-editor').style.display   = isEditor  ? 'flex'  : 'none';
   document.getElementById('tab-presets').style.display  = isPresets ? 'flex'  : 'none';
+  document.getElementById('tab-chain').style.display    = isChain   ? 'flex'  : 'none';
   document.getElementById('normal-view').style.display  = isPhone   ? 'none'  : 'flex';
   document.getElementById('phone-view').style.display   = isPhone   ? 'flex'  : 'none';
-  document.querySelectorAll('.stab').forEach(b => b.classList.toggle('on', b.textContent.toLowerCase() === tab));
+  document.querySelectorAll('.stab').forEach(b => b.classList.toggle('on', b.onclick && b.onclick.toString().includes("'"+tab+"'")));
   phoneMode = isPhone;
   if (isPhone) { setTimeout(setupPhonePreview, 50); }
   else { stopPhoneLoop(); }
   if (isPresets) renderPresets();
+  if (isChain)   renderChain();
 }
 
 function setupPhonePreview() {
@@ -2082,6 +2138,7 @@ function tickSeqHold() {
 }
 
 function tickSeqPhaseArrived() {
+  if (chainActive && !seqActive) { chainMorphArrived(); return; }
   if (!seqActive) return;
   if (seqPhase === 'morph_to') {
     seqPhase = 'hold_preset'; seqTimer = SEQ_HOLD_FRAMES;
@@ -2153,7 +2210,7 @@ function stopSequence() {
 }
 
 function tickPlayback() {
-  if (!playbackActive || presets.length === 0) return;
+  if (!playbackActive || (presets.length === 0 && !chainActive)) return;
   if (playbackBlend < 1) {
     playbackBlend = Math.min(1, playbackBlend + PLAYBACK_MORPH_SPEED);
     const eb0 = easeInOut(playbackBlend);
@@ -2190,6 +2247,122 @@ function tickPlayback() {
 applyFmt();
 window.addEventListener('resize', () => { if (phoneMode) setupPhonePreview(); });
 currentVisualSettings = captureSettings();
+/* ── Chain ── */
+let chainStates  = [];
+let chainActive  = false;
+let chainHolding = false;
+let chainHoldTimer = 0;
+let chainFromIdx = 0, chainToIdx = 1;
+const CHAIN_HOLD = 150;
+
+function chainAdd() {
+  if (chainStates.length >= 3) return;
+  const s = { settings: captureSettings(), anim: currentAnim };
+  chainStates.push(s);
+  renderChain();
+}
+
+function chainRemove(i) {
+  chainStates.splice(i, 1);
+  renderChain();
+}
+
+function chainMoveUp(i) {
+  if (i === 0) return;
+  [chainStates[i-1], chainStates[i]] = [chainStates[i], chainStates[i-1]];
+  renderChain();
+}
+
+function chainMoveDown(i) {
+  if (i >= chainStates.length - 1) return;
+  [chainStates[i], chainStates[i+1]] = [chainStates[i+1], chainStates[i]];
+  renderChain();
+}
+
+function renderChain() {
+  const list  = document.getElementById('chain-list');
+  const empty = document.getElementById('chain-empty');
+  const addBtn = document.getElementById('chain-add-btn');
+  if (!list) return;
+  list.innerHTML = '';
+  if (chainStates.length === 0) {
+    if (empty) empty.style.display = '';
+  } else {
+    if (empty) empty.style.display = 'none';
+    const palette = { gray:'#888', blue:'#4a90d9', purple:'#8b6fd4', green:'#4caf7d', amber:'#d4a030', coral:'#d46060', white:'#e8e8e4' };
+    chainStates.forEach((s, i) => {
+      const isActive = chainActive && (chainHolding ? chainToIdx === i : chainToIdx === i);
+      const card = document.createElement('div');
+      card.className = 'ccard' + (isActive ? ' active' : '');
+      const col = palette[s.settings.colorKey] || '#888';
+      card.innerHTML = `
+        <div class="ccard-num">${i+1}</div>
+        <div class="ccard-body">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="ccard-dot" style="background:${col}"></span>
+            <span class="ccard-name">${s.anim}</span>
+          </div>
+          <div class="ccard-meta">${s.settings.starCount || 12} stars · r${s.settings.orbitRadius || 105}</div>
+        </div>
+        <div class="ccard-btns">
+          <button class="ccard-btn" onclick="chainMoveUp(${i})" title="Move up">↑</button>
+          <button class="ccard-btn" onclick="chainMoveDown(${i})" title="Move down">↓</button>
+          <button class="ccard-btn" onclick="chainRemove(${i})" title="Remove">×</button>
+        </div>`;
+      list.appendChild(card);
+    });
+  }
+  if (addBtn) addBtn.style.opacity = chainStates.length >= 3 ? '0.35' : '1';
+  if (addBtn) addBtn.style.pointerEvents = chainStates.length >= 3 ? 'none' : '';
+  const lbl = document.getElementById('chain-playing-label');
+  if (lbl) lbl.textContent = chainActive ? (chainHolding ? `holding state ${chainToIdx+1}` : `morphing → state ${chainToIdx+1}`) : '';
+  const playBtn = document.getElementById('chain-play-btn');
+  if (playBtn) playBtn.textContent = chainActive ? '■ Stop' : '▶ Play';
+  if (playBtn) playBtn.onclick = chainActive ? chainStop : chainPlay;
+}
+
+function chainPlay() {
+  if (chainStates.length < 2) return;
+  chainActive  = true;
+  chainHolding = false;
+  chainFromIdx = 0;
+  chainToIdx   = 1;
+  // Snap to first state & capture positions
+  applySettings(chainStates[0].settings);
+  currentAnim = chainStates[0].anim;
+  const n0 = chainStates[0].settings.starCount || 12;
+  { const _sv = animStyleForGetParams; animStyleForGetParams = chainStates[0].anim;
+    for (let _i = 0; _i < n0; _i++) {
+      const _p = getStarParams(_i, 1.0);
+      starCurrentPos[_i] = { x: _p.x, y: _p.y, rot: _p.rot || 0, sz: _p.sz, fa: _p.fa };
+    }
+    animStyleForGetParams = _sv; }
+  starMorphFromPos = starCurrentPos.slice(0, n0).map(q => ({...q}));
+  playbackFromSettings = Object.assign({}, chainStates[0].settings);
+  playbackFromAnim     = chainStates[0].anim;
+  playbackToSettings   = chainStates[1].settings;
+  playbackToAnim       = chainStates[1].anim;
+  playbackBlend = 0; playbackHold = 0;
+  playbackActive = true;
+  renderChain();
+}
+
+function chainStop() {
+  chainActive  = false;
+  chainHolding = false;
+  pausePlayback();
+  renderChain();
+}
+
+function chainMorphArrived() {
+  playbackActive = false;
+  applySettings(playbackToSettings);
+  currentAnim = playbackToAnim;
+  chainHolding   = true;
+  chainHoldTimer = CHAIN_HOLD;
+  renderChain();
+}
+
 loop();
 </script>
 </body>
