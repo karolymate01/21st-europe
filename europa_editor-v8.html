@@ -130,7 +130,6 @@ canvas { display: block; }
 .anim-group-head:hover { color:var(--text2); }
 .anim-group-arrow { font-size:8px; transition:transform 0.2s; }
 .anim-group-body { overflow:hidden; transition:max-height 0.25s ease; }
-
 </style>
 <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
@@ -146,7 +145,6 @@ canvas { display: block; }
     <button class="stab on" onclick="switchTab('editor')">✏ Editor</button>
     <button class="stab"    onclick="switchTab('presets')">⊞ Presets</button>
     <button class="stab"    onclick="switchTab('phone')">▭ Phone</button>
-    <button class="stab"    onclick="switchTab('chain')">⛓ Chain</button>
   </div>
 
   <!-- EDITOR TAB -->
@@ -363,16 +361,6 @@ canvas { display: block; }
     </div>
   </div><!-- end tab-presets -->
 
-  <!-- CHAIN TAB -->
-  <div id="tab-chain" style="display:none; flex-direction:column; flex:1; overflow-y:auto; padding:12px 14px; gap:10px">
-    <div id="chain-list"></div>
-    <button id="chain-add-btn" class="export-btn" onclick="chainAddState()" style="margin:0;width:100%">+ Add current state</button>
-    <div style="display:flex;gap:6px;margin-top:4px">
-      <button id="chain-play-btn" class="export-btn" onclick="chainPlay()" style="margin:0;flex:1">&#9654; Play</button>
-      <button class="export-btn" onclick="chainStop()" style="margin:0;flex:1">&#9632; Stop</button>
-    </div>
-  </div><!-- end tab-chain -->
-
 </aside>
 
 <main id="main">
@@ -422,7 +410,7 @@ canvas { display: block; }
 
 <script>
 const cv = document.getElementById('c');
-let ct = cv.getContext('2d');
+const ct = cv.getContext('2d');
 let W, H, CX, CY;
 
 let state = 'idle', t = 0, blend = 0;
@@ -581,20 +569,6 @@ function loop() {
 
   tickPlayback();
   if (seqActive && !playbackActive) tickSeqHold();
-  if (chainActive && chainHolding) {
-    if (--chainHoldTimer <= 0) {
-      chainHolding = false;
-      // Advance to next state (loop)
-      chainToIdx = (chainFromIdx + 1) % chainStates.length;
-      starMorphFromPos = starCurrentPos.slice(0, chainStates[chainFromIdx].settings.starCount||12).map(q=>({...q}));
-      playbackFromSettings = Object.assign({}, chainStates[chainFromIdx].settings);
-      playbackFromAnim     = chainStates[chainFromIdx].anim;
-      playbackToSettings   = chainStates[chainToIdx].settings;
-      playbackToAnim       = chainStates[chainToIdx].anim;
-      playbackBlend = 0; playbackHold = 0;
-      playbackActive = true;
-    }
-  }
   if (playbackActive && playbackBlend < 1) {
     const eb = easeInOut(Math.max(0, Math.min(1, playbackBlend)));
     drawOrbitPositionMorph(eb);
@@ -603,7 +577,6 @@ function loop() {
   }
 
   if (showAxis) drawAxis();
-
   requestAnimationFrame(loop);
 }
 
@@ -1327,10 +1300,8 @@ function switchTab(tab) {
   const isEditor  = tab === 'editor';
   const isPhone   = tab === 'phone';
   const isPresets = tab === 'presets' || isPhone;
-  const isChain   = tab === 'chain';
   document.getElementById('tab-editor').style.display   = isEditor  ? 'flex'  : 'none';
   document.getElementById('tab-presets').style.display  = isPresets ? 'flex'  : 'none';
-  document.getElementById('tab-chain').style.display    = isChain   ? 'flex'  : 'none';
   document.getElementById('normal-view').style.display  = isPhone   ? 'none'  : 'flex';
   document.getElementById('phone-view').style.display   = isPhone   ? 'flex'  : 'none';
   document.querySelectorAll('.stab').forEach(b => b.classList.toggle('on', b.textContent.toLowerCase() === tab));
@@ -1338,7 +1309,6 @@ function switchTab(tab) {
   if (isPhone) { setTimeout(setupPhonePreview, 50); }
   else { stopPhoneLoop(); }
   if (isPresets) renderPresets();
-  if (isChain) renderChain();
 }
 
 function setupPhonePreview() {
@@ -2112,7 +2082,6 @@ function tickSeqHold() {
 }
 
 function tickSeqPhaseArrived() {
-  if (chainActive && !seqActive) { chainMorphArrived(); return; }
   if (!seqActive) return;
   if (seqPhase === 'morph_to') {
     seqPhase = 'hold_preset'; seqTimer = SEQ_HOLD_FRAMES;
@@ -2184,7 +2153,7 @@ function stopSequence() {
 }
 
 function tickPlayback() {
-  if (!playbackActive || (presets.length === 0 && !chainActive)) return;
+  if (!playbackActive || presets.length === 0) return;
   if (playbackBlend < 1) {
     playbackBlend = Math.min(1, playbackBlend + PLAYBACK_MORPH_SPEED);
     const eb0 = easeInOut(playbackBlend);
@@ -2221,119 +2190,7 @@ function tickPlayback() {
 applyFmt();
 window.addEventListener('resize', () => { if (phoneMode) setupPhonePreview(); });
 currentVisualSettings = captureSettings();
-
-
-
-// ══════════════════════════════════
-// CHAIN SYSTEM
-// ══════════════════════════════════
-let chainStates = [];
-let chainActive = false;
-let chainFromIdx = 0, chainToIdx = 1;
-let chainHolding = false, chainHoldTimer = 0;
-const CHAIN_HOLD = 150;
-
-function chainAddState() {
-  if (chainStates.length >= 3) return;
-  chainStates.push({
-    settings: captureSettings(),
-    anim: currentAnim,
-    label: 'State ' + (chainStates.length + 1)
-  });
-  renderChain();
-}
-
-function chainRemove(i) {
-  chainStates.splice(i, 1);
-  chainStates.forEach((s, j) => s.label = 'State ' + (j + 1));
-  renderChain();
-}
-
-function chainMoveUp(i) {
-  if (i === 0) return;
-  [chainStates[i-1], chainStates[i]] = [chainStates[i], chainStates[i-1]];
-  chainStates.forEach((s, j) => s.label = 'State ' + (j + 1));
-  renderChain();
-}
-
-function chainMoveDown(i) {
-  if (i >= chainStates.length - 1) return;
-  [chainStates[i], chainStates[i+1]] = [chainStates[i+1], chainStates[i]];
-  chainStates.forEach((s, j) => s.label = 'State ' + (j + 1));
-  renderChain();
-}
-
-function renderChain() {
-  const list = document.getElementById('chain-list');
-  if (!list) return;
-  list.innerHTML = '';
-  chainStates.forEach((s, i) => {
-    const card = document.createElement('div');
-    card.style.cssText = 'border:0.5px solid var(--border);border-radius:5px;padding:8px 9px;display:flex;align-items:center;gap:6px;background:transparent;margin-bottom:5px;';
-    const body = document.createElement('div');
-    body.style.cssText = 'flex:1;min-width:0;';
-    const name = document.createElement('div');
-    name.style.cssText = 'font-size:11px;font-family:"DM Mono",monospace;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-    name.textContent = s.label;
-    const meta = document.createElement('div');
-    meta.style.cssText = 'font-size:10px;font-family:"DM Mono",monospace;color:var(--text3);letter-spacing:0.03em;margin-top:2px;';
-    meta.textContent = s.anim + ' · ' + (s.settings.starCount || 12) + ' stars';
-    body.appendChild(name);
-    body.appendChild(meta);
-    card.appendChild(body);
-    const mkBtn = (txt, fn) => {
-      const b = document.createElement('button');
-      b.textContent = txt;
-      b.style.cssText = 'background:none;border:0.5px solid var(--border2);border-radius:4px;color:var(--text3);font-size:12px;cursor:pointer;padding:2px 6px;line-height:1;transition:color 0.12s;flex-shrink:0;';
-      b.onmouseenter = () => b.style.color = 'var(--text2)';
-      b.onmouseleave = () => b.style.color = 'var(--text3)';
-      b.onclick = fn;
-      return b;
-    };
-    card.appendChild(mkBtn('↑', () => chainMoveUp(i)));
-    card.appendChild(mkBtn('↓', () => chainMoveDown(i)));
-    card.appendChild(mkBtn('×', () => chainRemove(i)));
-    list.appendChild(card);
-  });
-  const addBtn = document.getElementById('chain-add-btn');
-  if (addBtn) addBtn.style.display = chainStates.length >= 3 ? 'none' : '';
-}
-
-function chainPlay() {
-  if (chainStates.length < 2) return;
-  chainActive = true;
-  chainHolding = false;
-  chainFromIdx = 0; chainToIdx = 1;
-  applySettings(chainStates[0].settings);
-  currentAnim = chainStates[0].anim;
-  { const _sv = animStyleForGetParams; animStyleForGetParams = chainStates[0].anim;
-    for (let _i = 0; _i < (chainStates[0].settings.starCount || 12); _i++) {
-      const _p = getStarParams(_i, 1.0); starCurrentPos[_i] = {x:_p.x, y:_p.y, rot:_p.rot||0, sz:_p.sz, fa:_p.fa};
-    }
-    animStyleForGetParams = _sv; }
-  starMorphFromPos = starCurrentPos.slice(0, chainStates[0].settings.starCount || 12).map(q => ({...q}));
-  playbackFromSettings = Object.assign({}, chainStates[0].settings);
-  playbackFromAnim     = chainStates[0].anim;
-  playbackToSettings   = chainStates[1].settings;
-  playbackToAnim       = chainStates[1].anim;
-  playbackBlend = 0; playbackHold = 0;
-  playbackActive = true;
-}
-
-function chainStop() {
-  chainActive = false; chainHolding = false;
-  pausePlayback();
-}
-
-function chainMorphArrived() {
-  playbackActive = false;
-  applySettings(playbackToSettings); currentAnim = playbackToAnim;
-  chainHolding = true; chainHoldTimer = CHAIN_HOLD;
-  chainFromIdx = chainToIdx;
-}
-
-
 loop();
 </script>
-
 </body>
+</html>
