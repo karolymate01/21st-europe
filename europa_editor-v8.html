@@ -130,6 +130,74 @@ canvas { display: block; }
 .anim-group-head:hover { color:var(--text2); }
 .anim-group-arrow { font-size:8px; transition:transform 0.2s; }
 .anim-group-body { overflow:hidden; transition:max-height 0.25s ease; }
+
+/* ── Demo Overlay ── */
+#demo-overlay {
+  display: none; position: fixed; inset: 0; z-index: 9999;
+  align-items: center; justify-content: center;
+  background: linear-gradient(150deg, #c8ccda 0%, #b3bace 45%, #a9b3c8 100%);
+}
+.demo-card {
+  width: 400px;
+  background: rgba(155,163,180,0.45);
+  backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255,255,255,0.32);
+  border-radius: 32px;
+  padding: 40px 32px 32px;
+  display: flex; flex-direction: column; align-items: center; gap: 0;
+  box-shadow: 0 28px 80px rgba(0,0,0,0.18), 0 2px 0 rgba(255,255,255,0.22) inset;
+  position: relative;
+}
+.demo-status {
+  color: rgba(255,255,255,0.92);
+  font-size: 16px; font-weight: 500; letter-spacing: 0.04em;
+  font-family: 'DM Mono', monospace;
+  min-height: 24px; margin-bottom: 20px;
+  transition: opacity 0.4s;
+  text-align: center;
+}
+.demo-canvas-wrap {
+  width: 260px; height: 260px;
+  border-radius: 50%; overflow: hidden;
+  flex-shrink: 0; margin-bottom: 22px;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.18);
+}
+#demo-canvas { width: 260px; height: 260px; display: block; }
+.demo-bubble {
+  width: 100%;
+  background: rgba(255,255,255,0.92);
+  border-radius: 18px; padding: 16px 20px;
+  font-size: 14px; line-height: 1.65; color: #1a1a1e;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  opacity: 0; transform: translateY(10px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  min-height: 52px; box-sizing: border-box;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+.demo-bubble.visible { opacity: 1; transform: translateY(0); }
+.demo-bubble-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(100,110,130,0.7); margin-bottom: 5px; font-family: 'DM Mono', monospace;
+}
+.demo-close {
+  position: absolute; bottom: 18px; right: 18px;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.32);
+  color: rgba(255,255,255,0.8); font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+  font-family: inherit;
+}
+.demo-close:hover { background: rgba(255,255,255,0.30); }
+.demo-open-btn {
+  display: block; width: 100%; margin-top: 10px;
+  padding: 9px 0; border-radius: 8px;
+  background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.72); font-size: 12px; letter-spacing: 0.07em;
+  font-family: 'DM Mono', monospace; cursor: pointer; text-align: center;
+  transition: background 0.2s, color 0.2s;
+}
+.demo-open-btn:hover { background: rgba(255,255,255,0.18); color: rgba(255,255,255,0.95); }
 </style>
 <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
@@ -569,6 +637,7 @@ function loop() {
 
   tickPlayback();
   if (seqActive && !playbackActive) tickSeqHold();
+  if (demoActive) demoTick();
   if (playbackActive && playbackBlend < 1) {
     const eb = easeInOut(Math.max(0, Math.min(1, playbackBlend)));
     drawOrbitPositionMorph(eb);
@@ -1573,6 +1642,13 @@ function renderPresets() {
     sc.addEventListener('click', ()=>loadPresetWithMorph(p.id));
     panel.appendChild(sc);
   });
+  if (presets.length > 0) {
+    const demoBtn = document.createElement('button');
+    demoBtn.className = 'demo-open-btn';
+    demoBtn.textContent = 'DEMO';
+    demoBtn.onclick = () => openDemo();
+    panel.appendChild(demoBtn);
+  }
 }
 
 function showEditorSaveInput() {
@@ -2096,8 +2172,16 @@ function tickSeqPhaseArrived() {
       activePresetId = seqPresetId;
       seqPhase = 'idle1'; seqTimer = SEQ_IDLE_FRAMES;
     } else {
-      seqActive = false; seqAllPresets = false;
-      renderPresets();
+      if (demoActive) {
+        // Loop: restart from first preset
+        seqAllIndex = 0;
+        seqPresetId = presets[0].id;
+        activePresetId = seqPresetId;
+        seqPhase = 'idle1'; seqTimer = SEQ_IDLE_FRAMES;
+      } else {
+        seqActive = false; seqAllPresets = false;
+        renderPresets();
+      }
     }
   }
 }
@@ -2190,7 +2274,115 @@ function tickPlayback() {
 applyFmt();
 window.addEventListener('resize', () => { if (phoneMode) setupPhonePreview(); });
 currentVisualSettings = captureSettings();
+
+// ── Demo Mode ──
+// Edit DEMO_QA to customise the Q&A bubbles shown during the demo
+const DEMO_QA = [
+  { q: "...", a: "..." },
+  { q: "...", a: "..." },
+  { q: "...", a: "..." }
+];
+
+let demoActive = false;
+let demoPhase  = 'idle';   // 'idle' | 'listening' | 'speaking'
+let demoTimer  = 0;
+let demoQaIndex = 0;
+let _demoMirrorId = null;
+
+const DEMO_DUR = { idle: 60, listening: 220, speaking: 300 };
+
+function openDemo() {
+  if (!presets.length) return;
+  demoActive  = true;
+  demoPhase   = 'idle';
+  demoTimer   = DEMO_DUR.idle;
+  demoQaIndex = 0;
+  document.getElementById('demo-overlay').style.display = 'flex';
+  _updateDemoUI();
+  _startDemoMirror();
+  playAll();
+}
+
+function closeDemo() {
+  demoActive = false;
+  document.getElementById('demo-overlay').style.display = 'none';
+  if (_demoMirrorId) { cancelAnimationFrame(_demoMirrorId); _demoMirrorId = null; }
+  stopSequence();
+}
+
+function _startDemoMirror() {
+  if (_demoMirrorId) cancelAnimationFrame(_demoMirrorId);
+  function mirror() {
+    if (!demoActive) return;
+    const dc  = document.getElementById('demo-canvas');
+    if (dc && canvas) {
+      const ctx = dc.getContext('2d');
+      ctx.clearRect(0, 0, 600, 600);
+      ctx.drawImage(canvas, 0, 0, 600, 600);
+    }
+    _demoMirrorId = requestAnimationFrame(mirror);
+  }
+  _demoMirrorId = requestAnimationFrame(mirror);
+}
+
+function demoTick() {
+  if (!demoActive) return;
+  if (--demoTimer > 0) return;
+  if      (demoPhase === 'idle')      { demoPhase = 'listening'; demoTimer = DEMO_DUR.listening; }
+  else if (demoPhase === 'listening') { demoPhase = 'speaking';  demoTimer = DEMO_DUR.speaking;  }
+  else {
+    demoQaIndex = (demoQaIndex + 1) % Math.max(1, DEMO_QA.length);
+    demoPhase   = 'idle';
+    demoTimer   = DEMO_DUR.idle;
+  }
+  _updateDemoUI();
+}
+
+function _updateDemoUI() {
+  const stEl  = document.getElementById('demo-status');
+  const bbEl  = document.getElementById('demo-bubble');
+  const lblEl = document.getElementById('demo-bubble-label');
+  const txtEl = document.getElementById('demo-bubble-text');
+  if (!stEl || !bbEl) return;
+
+  const qa = DEMO_QA[demoQaIndex % Math.max(1, DEMO_QA.length)] || {};
+
+  bbEl.classList.remove('visible');
+  setTimeout(() => {
+    if (demoPhase === 'idle') {
+      stEl.textContent = '';
+      bbEl.style.visibility = 'hidden';
+    } else {
+      bbEl.style.visibility = 'visible';
+      if (demoPhase === 'listening') {
+        stEl.textContent = 'Listening...';
+        lblEl.textContent = 'You';
+        txtEl.textContent = qa.q || '...';
+      } else {
+        stEl.textContent = 'Speaking...';
+        lblEl.textContent = 'Assistant';
+        txtEl.textContent = qa.a || '...';
+      }
+      requestAnimationFrame(() => bbEl.classList.add('visible'));
+    }
+  }, 320);
+}
+
 loop();
 </script>
+
+<div id="demo-overlay">
+  <div class="demo-card">
+    <div id="demo-status" class="demo-status"></div>
+    <div class="demo-canvas-wrap">
+      <canvas id="demo-canvas" width="600" height="600"></canvas>
+    </div>
+    <div id="demo-bubble" class="demo-bubble">
+      <div class="demo-bubble-label" id="demo-bubble-label"></div>
+      <div id="demo-bubble-text"></div>
+    </div>
+    <button class="demo-close" onclick="closeDemo()" title="Close">&#10006;</button>
+  </div>
+</div>
 </body>
 </html>
