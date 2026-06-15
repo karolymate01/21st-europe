@@ -131,73 +131,6 @@ canvas { display: block; }
 .anim-group-arrow { font-size:8px; transition:transform 0.2s; }
 .anim-group-body { overflow:hidden; transition:max-height 0.25s ease; }
 
-/* ── Demo Overlay ── */
-#demo-overlay {
-  display: none; position: fixed; inset: 0; z-index: 9999;
-  align-items: center; justify-content: center;
-  background: linear-gradient(150deg, #c8ccda 0%, #b3bace 45%, #a9b3c8 100%);
-}
-.demo-card {
-  width: 400px;
-  background: rgba(155,163,180,0.45);
-  backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
-  border: 1px solid rgba(255,255,255,0.32);
-  border-radius: 32px;
-  padding: 40px 32px 32px;
-  display: flex; flex-direction: column; align-items: center; gap: 0;
-  box-shadow: 0 28px 80px rgba(0,0,0,0.18), 0 2px 0 rgba(255,255,255,0.22) inset;
-  position: relative;
-}
-.demo-status {
-  color: rgba(255,255,255,0.92);
-  font-size: 16px; font-weight: 500; letter-spacing: 0.04em;
-  font-family: 'DM Mono', monospace;
-  min-height: 24px; margin-bottom: 20px;
-  transition: opacity 0.4s;
-  text-align: center;
-}
-.demo-canvas-wrap {
-  width: 260px; height: 260px;
-  border-radius: 50%; overflow: hidden;
-  flex-shrink: 0; margin-bottom: 22px;
-  box-shadow: 0 4px 32px rgba(0,0,0,0.18);
-}
-#demo-canvas { width: 260px; height: 260px; display: block; }
-.demo-bubble {
-  width: 100%;
-  background: rgba(255,255,255,0.92);
-  border-radius: 18px; padding: 16px 20px;
-  font-size: 14px; line-height: 1.65; color: #1a1a1e;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  opacity: 0; transform: translateY(10px);
-  transition: opacity 0.4s ease, transform 0.4s ease;
-  min-height: 52px; box-sizing: border-box;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-}
-.demo-bubble.visible { opacity: 1; transform: translateY(0); }
-.demo-bubble-label {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
-  color: rgba(100,110,130,0.7); margin-bottom: 5px; font-family: 'DM Mono', monospace;
-}
-.demo-close {
-  position: absolute; bottom: 18px; right: 18px;
-  width: 36px; height: 36px; border-radius: 50%;
-  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.32);
-  color: rgba(255,255,255,0.8); font-size: 14px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.2s;
-  font-family: inherit;
-}
-.demo-close:hover { background: rgba(255,255,255,0.30); }
-.demo-open-btn {
-  display: block; width: 100%; margin-top: 10px;
-  padding: 9px 0; border-radius: 8px;
-  background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.18);
-  color: rgba(255,255,255,0.72); font-size: 12px; letter-spacing: 0.07em;
-  font-family: 'DM Mono', monospace; cursor: pointer; text-align: center;
-  transition: background 0.2s, color 0.2s;
-}
-.demo-open-btn:hover { background: rgba(255,255,255,0.18); color: rgba(255,255,255,0.95); }
 </style>
 <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
@@ -213,6 +146,7 @@ canvas { display: block; }
     <button class="stab on" onclick="switchTab('editor')">✏ Editor</button>
     <button class="stab"    onclick="switchTab('presets')">⊞ Presets</button>
     <button class="stab"    onclick="switchTab('phone')">▭ Phone</button>
+    <button class="stab"    onclick="switchTab('chain')">⛓ Chain</button>
   </div>
 
   <!-- EDITOR TAB -->
@@ -429,6 +363,16 @@ canvas { display: block; }
     </div>
   </div><!-- end tab-presets -->
 
+  <!-- CHAIN TAB -->
+  <div id="tab-chain" style="display:none; flex-direction:column; flex:1; overflow-y:auto; padding:12px 14px; gap:10px">
+    <div id="chain-list"></div>
+    <button id="chain-add-btn" class="export-btn" onclick="chainAddState()" style="margin:0;width:100%">+ Add current state</button>
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <button id="chain-play-btn" class="export-btn" onclick="chainPlay()" style="margin:0;flex:1">&#9654; Play</button>
+      <button class="export-btn" onclick="chainStop()" style="margin:0;flex:1">&#9632; Stop</button>
+    </div>
+  </div><!-- end tab-chain -->
+
 </aside>
 
 <main id="main">
@@ -478,7 +422,7 @@ canvas { display: block; }
 
 <script>
 const cv = document.getElementById('c');
-const ct = cv.getContext('2d');
+let ct = cv.getContext('2d');
 let W, H, CX, CY;
 
 let state = 'idle', t = 0, blend = 0;
@@ -637,7 +581,20 @@ function loop() {
 
   tickPlayback();
   if (seqActive && !playbackActive) tickSeqHold();
-  if (demoActive) demoTick();
+  if (chainActive && chainHolding) {
+    if (--chainHoldTimer <= 0) {
+      chainHolding = false;
+      // Advance to next state (loop)
+      chainToIdx = (chainFromIdx + 1) % chainStates.length;
+      starMorphFromPos = starCurrentPos.slice(0, chainStates[chainFromIdx].settings.starCount||12).map(q=>({...q}));
+      playbackFromSettings = Object.assign({}, chainStates[chainFromIdx].settings);
+      playbackFromAnim     = chainStates[chainFromIdx].anim;
+      playbackToSettings   = chainStates[chainToIdx].settings;
+      playbackToAnim       = chainStates[chainToIdx].anim;
+      playbackBlend = 0; playbackHold = 0;
+      playbackActive = true;
+    }
+  }
   if (playbackActive && playbackBlend < 1) {
     const eb = easeInOut(Math.max(0, Math.min(1, playbackBlend)));
     drawOrbitPositionMorph(eb);
@@ -646,6 +603,7 @@ function loop() {
   }
 
   if (showAxis) drawAxis();
+
   requestAnimationFrame(loop);
 }
 
@@ -1369,8 +1327,10 @@ function switchTab(tab) {
   const isEditor  = tab === 'editor';
   const isPhone   = tab === 'phone';
   const isPresets = tab === 'presets' || isPhone;
+  const isChain   = tab === 'chain';
   document.getElementById('tab-editor').style.display   = isEditor  ? 'flex'  : 'none';
   document.getElementById('tab-presets').style.display  = isPresets ? 'flex'  : 'none';
+  document.getElementById('tab-chain').style.display    = isChain   ? 'flex'  : 'none';
   document.getElementById('normal-view').style.display  = isPhone   ? 'none'  : 'flex';
   document.getElementById('phone-view').style.display   = isPhone   ? 'flex'  : 'none';
   document.querySelectorAll('.stab').forEach(b => b.classList.toggle('on', b.textContent.toLowerCase() === tab));
@@ -1378,6 +1338,7 @@ function switchTab(tab) {
   if (isPhone) { setTimeout(setupPhonePreview, 50); }
   else { stopPhoneLoop(); }
   if (isPresets) renderPresets();
+  if (isChain) renderChain();
 }
 
 function setupPhonePreview() {
@@ -1642,13 +1603,6 @@ function renderPresets() {
     sc.addEventListener('click', ()=>loadPresetWithMorph(p.id));
     panel.appendChild(sc);
   });
-  if (presets.length > 0) {
-    const demoBtn = document.createElement('button');
-    demoBtn.className = 'demo-open-btn';
-    demoBtn.textContent = 'DEMO';
-    demoBtn.onclick = () => openDemo();
-    panel.appendChild(demoBtn);
-  }
 }
 
 function showEditorSaveInput() {
@@ -2158,6 +2112,7 @@ function tickSeqHold() {
 }
 
 function tickSeqPhaseArrived() {
+  if (chainActive && !seqActive) { chainMorphArrived(); return; }
   if (!seqActive) return;
   if (seqPhase === 'morph_to') {
     seqPhase = 'hold_preset'; seqTimer = SEQ_HOLD_FRAMES;
@@ -2172,16 +2127,8 @@ function tickSeqPhaseArrived() {
       activePresetId = seqPresetId;
       seqPhase = 'idle1'; seqTimer = SEQ_IDLE_FRAMES;
     } else {
-      if (demoActive) {
-        // Loop: restart from first preset
-        seqAllIndex = 0;
-        seqPresetId = presets[0].id;
-        activePresetId = seqPresetId;
-        seqPhase = 'idle1'; seqTimer = SEQ_IDLE_FRAMES;
-      } else {
-        seqActive = false; seqAllPresets = false;
-        renderPresets();
-      }
+      seqActive = false; seqAllPresets = false;
+      renderPresets();
     }
   }
 }
@@ -2237,7 +2184,7 @@ function stopSequence() {
 }
 
 function tickPlayback() {
-  if (!playbackActive || presets.length === 0) return;
+  if (!playbackActive || (presets.length === 0 && !chainActive)) return;
   if (playbackBlend < 1) {
     playbackBlend = Math.min(1, playbackBlend + PLAYBACK_MORPH_SPEED);
     const eb0 = easeInOut(playbackBlend);
@@ -2275,114 +2222,118 @@ applyFmt();
 window.addEventListener('resize', () => { if (phoneMode) setupPhonePreview(); });
 currentVisualSettings = captureSettings();
 
-// ── Demo Mode ──
-// Edit DEMO_QA to customise the Q&A bubbles shown during the demo
-const DEMO_QA = [
-  { q: "...", a: "..." },
-  { q: "...", a: "..." },
-  { q: "...", a: "..." }
-];
 
-let demoActive = false;
-let demoPhase  = 'idle';   // 'idle' | 'listening' | 'speaking'
-let demoTimer  = 0;
-let demoQaIndex = 0;
-let _demoMirrorId = null;
 
-const DEMO_DUR = { idle: 60, listening: 220, speaking: 300 };
+// ══════════════════════════════════
+// CHAIN SYSTEM
+// ══════════════════════════════════
+let chainStates = [];
+let chainActive = false;
+let chainFromIdx = 0, chainToIdx = 1;
+let chainHolding = false, chainHoldTimer = 0;
+const CHAIN_HOLD = 150;
 
-function openDemo() {
-  if (!presets.length) return;
-  demoActive  = true;
-  demoPhase   = 'idle';
-  demoTimer   = DEMO_DUR.idle;
-  demoQaIndex = 0;
-  document.getElementById('demo-overlay').style.display = 'flex';
-  _updateDemoUI();
-  _startDemoMirror();
-  playAll();
+function chainAddState() {
+  if (chainStates.length >= 3) return;
+  chainStates.push({
+    settings: captureSettings(),
+    anim: currentAnim,
+    label: 'State ' + (chainStates.length + 1)
+  });
+  renderChain();
 }
 
-function closeDemo() {
-  demoActive = false;
-  document.getElementById('demo-overlay').style.display = 'none';
-  if (_demoMirrorId) { cancelAnimationFrame(_demoMirrorId); _demoMirrorId = null; }
-  stopSequence();
+function chainRemove(i) {
+  chainStates.splice(i, 1);
+  chainStates.forEach((s, j) => s.label = 'State ' + (j + 1));
+  renderChain();
 }
 
-function _startDemoMirror() {
-  if (_demoMirrorId) cancelAnimationFrame(_demoMirrorId);
-  function mirror() {
-    if (!demoActive) return;
-    const dc  = document.getElementById('demo-canvas');
-    if (dc && canvas) {
-      const ctx = dc.getContext('2d');
-      ctx.clearRect(0, 0, 600, 600);
-      ctx.drawImage(canvas, 0, 0, 600, 600);
+function chainMoveUp(i) {
+  if (i === 0) return;
+  [chainStates[i-1], chainStates[i]] = [chainStates[i], chainStates[i-1]];
+  chainStates.forEach((s, j) => s.label = 'State ' + (j + 1));
+  renderChain();
+}
+
+function chainMoveDown(i) {
+  if (i >= chainStates.length - 1) return;
+  [chainStates[i], chainStates[i+1]] = [chainStates[i+1], chainStates[i]];
+  chainStates.forEach((s, j) => s.label = 'State ' + (j + 1));
+  renderChain();
+}
+
+function renderChain() {
+  const list = document.getElementById('chain-list');
+  if (!list) return;
+  list.innerHTML = '';
+  chainStates.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'border:0.5px solid var(--border);border-radius:5px;padding:8px 9px;display:flex;align-items:center;gap:6px;background:transparent;margin-bottom:5px;';
+    const body = document.createElement('div');
+    body.style.cssText = 'flex:1;min-width:0;';
+    const name = document.createElement('div');
+    name.style.cssText = 'font-size:11px;font-family:"DM Mono",monospace;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    name.textContent = s.label;
+    const meta = document.createElement('div');
+    meta.style.cssText = 'font-size:10px;font-family:"DM Mono",monospace;color:var(--text3);letter-spacing:0.03em;margin-top:2px;';
+    meta.textContent = s.anim + ' · ' + (s.settings.starCount || 12) + ' stars';
+    body.appendChild(name);
+    body.appendChild(meta);
+    card.appendChild(body);
+    const mkBtn = (txt, fn) => {
+      const b = document.createElement('button');
+      b.textContent = txt;
+      b.style.cssText = 'background:none;border:0.5px solid var(--border2);border-radius:4px;color:var(--text3);font-size:12px;cursor:pointer;padding:2px 6px;line-height:1;transition:color 0.12s;flex-shrink:0;';
+      b.onmouseenter = () => b.style.color = 'var(--text2)';
+      b.onmouseleave = () => b.style.color = 'var(--text3)';
+      b.onclick = fn;
+      return b;
+    };
+    card.appendChild(mkBtn('↑', () => chainMoveUp(i)));
+    card.appendChild(mkBtn('↓', () => chainMoveDown(i)));
+    card.appendChild(mkBtn('×', () => chainRemove(i)));
+    list.appendChild(card);
+  });
+  const addBtn = document.getElementById('chain-add-btn');
+  if (addBtn) addBtn.style.display = chainStates.length >= 3 ? 'none' : '';
+}
+
+function chainPlay() {
+  if (chainStates.length < 2) return;
+  chainActive = true;
+  chainHolding = false;
+  chainFromIdx = 0; chainToIdx = 1;
+  applySettings(chainStates[0].settings);
+  currentAnim = chainStates[0].anim;
+  { const _sv = animStyleForGetParams; animStyleForGetParams = chainStates[0].anim;
+    for (let _i = 0; _i < (chainStates[0].settings.starCount || 12); _i++) {
+      const _p = getStarParams(_i, 1.0); starCurrentPos[_i] = {x:_p.x, y:_p.y, rot:_p.rot||0, sz:_p.sz, fa:_p.fa};
     }
-    _demoMirrorId = requestAnimationFrame(mirror);
-  }
-  _demoMirrorId = requestAnimationFrame(mirror);
+    animStyleForGetParams = _sv; }
+  starMorphFromPos = starCurrentPos.slice(0, chainStates[0].settings.starCount || 12).map(q => ({...q}));
+  playbackFromSettings = Object.assign({}, chainStates[0].settings);
+  playbackFromAnim     = chainStates[0].anim;
+  playbackToSettings   = chainStates[1].settings;
+  playbackToAnim       = chainStates[1].anim;
+  playbackBlend = 0; playbackHold = 0;
+  playbackActive = true;
 }
 
-function demoTick() {
-  if (!demoActive) return;
-  if (--demoTimer > 0) return;
-  if      (demoPhase === 'idle')      { demoPhase = 'listening'; demoTimer = DEMO_DUR.listening; }
-  else if (demoPhase === 'listening') { demoPhase = 'speaking';  demoTimer = DEMO_DUR.speaking;  }
-  else {
-    demoQaIndex = (demoQaIndex + 1) % Math.max(1, DEMO_QA.length);
-    demoPhase   = 'idle';
-    demoTimer   = DEMO_DUR.idle;
-  }
-  _updateDemoUI();
+function chainStop() {
+  chainActive = false; chainHolding = false;
+  pausePlayback();
 }
 
-function _updateDemoUI() {
-  const stEl  = document.getElementById('demo-status');
-  const bbEl  = document.getElementById('demo-bubble');
-  const lblEl = document.getElementById('demo-bubble-label');
-  const txtEl = document.getElementById('demo-bubble-text');
-  if (!stEl || !bbEl) return;
-
-  const qa = DEMO_QA[demoQaIndex % Math.max(1, DEMO_QA.length)] || {};
-
-  bbEl.classList.remove('visible');
-  setTimeout(() => {
-    if (demoPhase === 'idle') {
-      stEl.textContent = '';
-      bbEl.style.visibility = 'hidden';
-    } else {
-      bbEl.style.visibility = 'visible';
-      if (demoPhase === 'listening') {
-        stEl.textContent = 'Listening...';
-        lblEl.textContent = 'You';
-        txtEl.textContent = qa.q || '...';
-      } else {
-        stEl.textContent = 'Speaking...';
-        lblEl.textContent = 'Assistant';
-        txtEl.textContent = qa.a || '...';
-      }
-      requestAnimationFrame(() => bbEl.classList.add('visible'));
-    }
-  }, 320);
+function chainMorphArrived() {
+  playbackActive = false;
+  applySettings(playbackToSettings); currentAnim = playbackToAnim;
+  chainHolding = true; chainHoldTimer = CHAIN_HOLD;
+  chainFromIdx = chainToIdx;
 }
+
 
 loop();
 </script>
 
-<div id="demo-overlay">
-  <div class="demo-card">
-    <div id="demo-status" class="demo-status"></div>
-    <div class="demo-canvas-wrap">
-      <canvas id="demo-canvas" width="600" height="600"></canvas>
-    </div>
-    <div id="demo-bubble" class="demo-bubble">
-      <div class="demo-bubble-label" id="demo-bubble-label"></div>
-      <div id="demo-bubble-text"></div>
-    </div>
-    <button class="demo-close" onclick="closeDemo()" title="Close">&#10006;</button>
-  </div>
-</div>
 </body>
-</html>
