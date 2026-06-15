@@ -148,6 +148,12 @@ canvas { display: block; }
 .ccard-btn + .ccard-btn { border-top: 0.5px solid var(--border); }
 #chain-empty { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); text-align: center; padding: 28px 0 8px; line-height: 2; }
 #chain-playing-label { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--accent); text-align: center; min-height: 16px; letter-spacing: 0.05em; }
+#chain-flow { display:flex; align-items:center; justify-content:center; gap:5px; padding:8px 10px 4px; flex-wrap:wrap; min-height:38px; }
+.cflow-node { width:26px; height:26px; border-radius:50%; border:0.5px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:11px; font-family:'DM Mono',monospace; color:var(--text3); cursor:pointer; transition:all 0.15s; flex-shrink:0; }
+.cflow-node:hover { border-color:var(--accent); color:var(--accent); }
+.cflow-node.active { border-color:var(--accent); color:var(--accent); background:rgba(255,255,255,0.06); }
+.cflow-arrow { font-size:9px; color:var(--border2); flex-shrink:0; }
+.cflow-loop { font-size:9px; color:var(--border2); flex-shrink:0; }
 </style>
 <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
@@ -382,6 +388,7 @@ canvas { display: block; }
 
   <!-- CHAIN TAB -->
   <div id="tab-chain">
+    <div id="chain-flow"></div>
     <div id="chain-scroll">
       <div id="chain-empty" style="display:none">Add states below<br>min. 2 to play</div>
       <div id="chain-list"></div>
@@ -392,6 +399,7 @@ canvas { display: block; }
       <div style="display:flex;gap:5px">
         <button class="export-btn" style="flex:1;margin:0" id="chain-play-btn" onclick="chainPlay()">▶ Play</button>
         <button class="export-btn" style="flex:1;margin:0" onclick="chainStop()">■ Stop</button>
+        <button class="export-btn" style="flex:1;margin:0" onclick="chainExportLottie()" title="Export chain as Lottie JSON">↓ Lottie</button>
       </div>
     </div>
   </div><!-- end tab-chain -->
@@ -2319,6 +2327,41 @@ function renderChain() {
   const playBtn = document.getElementById('chain-play-btn');
   if (playBtn) playBtn.textContent = chainActive ? '■ Stop' : '▶ Play';
   if (playBtn) playBtn.onclick = chainActive ? chainStop : chainPlay;
+
+  // Flow bar
+  const flow = document.getElementById('chain-flow');
+  if (flow) {
+    flow.innerHTML = '';
+    if (chainStates.length === 0) {
+      flow.innerHTML = '<span style="font-size:10px;font-family:'DM Mono',monospace;color:var(--text3)">no states yet</span>';
+    } else {
+      const palette2 = { gray:'#888', blue:'#4a90d9', purple:'#8b6fd4', green:'#4caf7d', amber:'#d4a030', coral:'#d46060', white:'#e8e8e4' };
+      chainStates.forEach((s, i) => {
+        const isActive = chainActive && (chainHolding ? chainToIdx === i : (chainFromIdx === i || chainToIdx === i));
+        const nd = document.createElement('div');
+        nd.className = 'cflow-node' + (isActive ? ' active' : '');
+        const col = palette2[s.settings.colorKey] || '#888';
+        nd.style.borderColor = isActive ? col : '';
+        nd.style.color = isActive ? col : '';
+        nd.title = `Preview state ${i+1}: ${s.anim}`;
+        nd.textContent = i+1;
+        nd.onclick = () => chainPreview(i);
+        flow.appendChild(nd);
+        if (i < chainStates.length - 1) {
+          const arr = document.createElement('span');
+          arr.className = 'cflow-arrow';
+          arr.textContent = '→';
+          flow.appendChild(arr);
+        }
+      });
+      if (chainStates.length >= 2) {
+        const loop = document.createElement('span');
+        loop.className = 'cflow-loop';
+        loop.textContent = '↺';
+        flow.appendChild(loop);
+      }
+    }
+  }
 }
 
 function chainPlay() {
@@ -2352,6 +2395,230 @@ function chainStop() {
   chainHolding = false;
   pausePlayback();
   renderChain();
+}
+
+function chainPreview(i) {
+  if (i < 0 || i >= chainStates.length) return;
+  const s = chainStates[i];
+  applySettings(s.settings);
+  currentAnim = s.anim;
+}
+
+function chainExportLottie() {
+  if (chainStates.length < 2) { alert('Add at least 2 states to export.'); return; }
+
+  const fps = 30;
+  const KF_STEP = 2;
+  // Canvas runs ~60fps; Lottie is 30fps → divide canvas ticks by 2
+  const HOLD_LF  = Math.round(CHAIN_HOLD / 2);
+  const MORPH_LF = Math.round(1 / PLAYBACK_MORPH_SPEED / 2);
+
+  const n = chainStates.length;
+  const maxStars = Math.max(...chainStates.map(s => s.settings.starCount || 12));
+
+  // Build segments: hold0, morph01, hold1, morph12, hold2, …
+  const segments = [];
+  let f = 0;
+  for (let i = 0; i < n; i++) {
+    segments.push({ type:'hold', idx:i, start:f, end:f+HOLD_LF });
+    f += HOLD_LF;
+    if (i < n - 1) {
+      segments.push({ type:'morph', from:i, to:i+1, start:f, end:f+MORPH_LF });
+      f += MORPH_LF;
+    }
+  }
+  const totalFrames = f;
+
+  // Save all mutable globals we'll touch
+  const savedT = t;
+  const savedFrom = playbackFromSettings, savedTo = playbackToSettings;
+  const savedFromAnim = playbackFromAnim,  savedToAnim = playbackToAnim;
+  const savedBlend = playbackBlend;
+  const savedMorphFrom = starMorphFromPos ? starMorphFromPos.map(p=>p?{...p}:null) : [];
+  const savedStyle = animStyleForGetParams;
+  const sv0 = { starCount, baseSize, orbitRadius, innerRatio, opacity, movementAmp,
+                pulseAmt, spinAmt, axisPull, stabilizePos, stabilize, fixAxis, fixSize };
+
+  // Helper: compute all-star baked positions for a given state (hold phase)
+  function bakeHold(stateIdx) {
+    const st = chainStates[stateIdx];
+    const sc = st.settings.starCount || 12;
+    const stOp = st.settings.opacity ?? 0.45;
+    starCount=sc; baseSize=st.settings.baseSize??11; orbitRadius=st.settings.orbitRadius??88;
+    innerRatio=st.settings.innerRatio??0.42; opacity=stOp;
+    movementAmp=st.settings.movementAmp??13; pulseAmt=st.settings.pulseAmt??0.8;
+    spinAmt=st.settings.spinAmt??0.4; axisPull=st.settings.axisPull??0;
+    stabilizePos=!!st.settings.stabilizePos; stabilize=!!st.settings.stabilize;
+    fixAxis=!!st.settings.fixAxis; fixSize=!!st.settings.fixSize;
+    animStyleForGetParams = st.anim;
+    const out = [];
+    for (let i = 0; i < maxStars; i++) {
+      if (i < sc) {
+        const p = getStarParams(i, 1.0);
+        out.push({ x:p.x, y:p.y, rot:(p.rot||0), sz:Math.max(0.1,p.sz), fa:p.fa,
+                   op:Math.min(100,Math.max(0, p.fa * stOp / 0.45 * 100)) });
+      } else {
+        out.push(null);
+      }
+    }
+    // Restore
+    starCount=sv0.starCount; baseSize=sv0.baseSize; orbitRadius=sv0.orbitRadius;
+    innerRatio=sv0.innerRatio; opacity=sv0.opacity; movementAmp=sv0.movementAmp;
+    pulseAmt=sv0.pulseAmt; spinAmt=sv0.spinAmt; axisPull=sv0.axisPull;
+    stabilizePos=sv0.stabilizePos; stabilize=sv0.stabilize; fixAxis=sv0.fixAxis; fixSize=sv0.fixSize;
+    animStyleForGetParams = savedStyle;
+    return out;
+  }
+
+  // Bake per-star frame data
+  const starData = Array.from({length: maxStars}, () => []);
+
+  for (const seg of segments) {
+    if (seg.type === 'hold') {
+      const pos = bakeHold(seg.idx);
+      for (let lf = seg.start; lf < seg.end; lf += KF_STEP) {
+        for (let i = 0; i < maxStars; i++) {
+          const p = pos[i];
+          starData[i].push(p
+            ? { frame:lf, x:p.x, y:p.y, rot:p.rot*180/Math.PI, sz:p.sz, op:p.op }
+            : { frame:lf, x:CX, y:CY, rot:0, sz:0.1, op:0 });
+        }
+      }
+    } else {
+      // morph segment — use computeFromParams / computeToParams
+      const fSt = chainStates[seg.from], tSt = chainStates[seg.to];
+      playbackFromSettings = Object.assign({}, fSt.settings);
+      playbackToSettings   = Object.assign({}, tSt.settings);
+      playbackFromAnim = fSt.anim;
+      playbackToAnim   = tSt.anim;
+      // Populate starMorphFromPos from the FROM bake
+      const fromPos = bakeHold(seg.from);
+      starMorphFromPos = fromPos.map(p => p ? {x:p.x, y:p.y, rot:p.rot, sz:p.sz, fa:p.fa} : {x:CX,y:CY,rot:0,sz:0.1,fa:0});
+
+      const fromCount = fSt.settings.starCount || 12;
+      const toCount   = tSt.settings.starCount || 12;
+      const opFrom = fSt.settings.opacity ?? 0.45;
+      const opTo   = tSt.settings.opacity ?? 0.45;
+
+      for (let lf = seg.start; lf < seg.end; lf += KF_STEP) {
+        const rawBlend = (lf - seg.start) / (seg.end - seg.start);
+        const eb = easeInOut(Math.min(1, rawBlend));
+        const blendedOp = lerp(opFrom, opTo, eb);
+
+        for (let i = 0; i < maxStars; i++) {
+          const from = computeFromParams(i);
+          const to   = i < toCount ? computeToParams(i) : null;
+          let x, y, rot, sz, fa;
+          if (from && to) {
+            x = lerp(from.x, to.x, eb);
+            y = lerp(from.y, to.y, eb);
+            rot = lerpAngle(from.rot||0, to.rot||0, eb);
+            sz  = lerp(from.sz, to.sz, eb);
+            fa  = lerp(from.fa, to.fa, eb);
+          } else if (from) {
+            const target = computeToParams(i % toCount);
+            x = lerp(from.x, target.x, eb);
+            y = lerp(from.y, target.y, eb);
+            rot = lerpAngle(from.rot||0, target.rot||0, eb);
+            sz  = lerp(from.sz, 0, eb);
+            fa  = lerp(from.fa, 0, eb);
+          } else if (to) {
+            const source = computeFromParams(i % fromCount);
+            x = lerp(source.x, to.x, eb);
+            y = lerp(source.y, to.y, eb);
+            rot = lerpAngle(source.rot||0, to.rot||0, eb);
+            sz  = lerp(0, to.sz, eb);
+            fa  = lerp(0, to.fa, eb);
+          } else {
+            x=CX; y=CY; rot=0; sz=0.1; fa=0;
+          }
+          const op = Math.min(100, Math.max(0, fa * blendedOp / 0.45 * 100));
+          starData[i].push({ frame:lf, x, y, rot:rot*180/Math.PI, sz:Math.max(0.1,sz), op });
+        }
+      }
+    }
+  }
+
+  // Restore all globals
+  t = savedT;
+  playbackFromSettings = savedFrom; playbackToSettings = savedTo;
+  playbackFromAnim = savedFromAnim; playbackToAnim = savedToAnim;
+  playbackBlend = savedBlend;
+  starMorphFromPos = savedMorphFrom;
+  animStyleForGetParams = savedStyle;
+  starCount=sv0.starCount; baseSize=sv0.baseSize; orbitRadius=sv0.orbitRadius;
+  innerRatio=sv0.innerRatio; opacity=sv0.opacity; movementAmp=sv0.movementAmp;
+  pulseAmt=sv0.pulseAmt; spinAmt=sv0.spinAmt; axisPull=sv0.axisPull;
+  stabilizePos=sv0.stabilizePos; stabilize=sv0.stabilize; fixAxis=sv0.fixAxis; fixSize=sv0.fixSize;
+
+  // Build Lottie JSON
+  const firstSettings = chainStates[0].settings;
+  const pal = palette[firstSettings.colorKey] || palette.gray;
+  const fillC = [pal.r/255, pal.g/255, pal.b/255, 1];
+  const bgHex = {'bg-dark':'#0e0e0f','bg-mid':'#1e1e20','bg-light':'#f0f0ec','bg-white':'#ffffff'};
+
+  function vecKF(frames, getter) {
+    return frames.map((d, idx) => {
+      const kf = {t:d.frame, s:getter(d)};
+      if (idx < frames.length-1) { kf.i={x:[0.5],y:[0.5]}; kf.o={x:[0.5],y:[0.5]}; }
+      return kf;
+    });
+  }
+  function scalarKF(frames, getter) {
+    return frames.map((d, idx) => {
+      const kf = {t:d.frame, s:[getter(d)]};
+      if (idx < frames.length-1) { kf.i={x:[0.5],y:[0.5]}; kf.o={x:[0.5],y:[0.5]}; }
+      return kf;
+    });
+  }
+
+  const layers = [];
+  for (let i = 0; i < maxStars; i++) {
+    const data = starData[i];
+    const visFrames = data.filter(d => d.sz > 0.2);
+    const avgSz = visFrames.length
+      ? visFrames.reduce((s,d)=>s+d.sz,0) / visFrames.length
+      : (chainStates[0].settings.baseSize || 11);
+    layers.push({
+      ddd:0, ind:i+1, ty:4, nm:`Star ${i+1}`, sr:1,
+      ks:{
+        o:{a:1, k:scalarKF(data, d=>Math.round(d.op))},
+        r:{a:1, k:scalarKF(data, d=>d.rot)},
+        p:{a:1, k:vecKF(data, d=>[d.x, d.y, 0])},
+        a:{a:0, k:[0,0,0]},
+        s:{a:1, k:vecKF(data, d=>[d.sz/avgSz*100, d.sz/avgSz*100, 100])}
+      },
+      ao:0,
+      shapes:[{
+        ty:'gr', nm:'star', it:[
+          {ty:'sh', nm:'star', ks:{a:0, k:{
+            v:STAR21_V.map(([x,y])=>[x*avgSz/50, y*avgSz/50]),
+            i:STAR21_I.map(([x,y])=>[x*avgSz/50, y*avgSz/50]),
+            o:STAR21_O.map(([x,y])=>[x*avgSz/50, y*avgSz/50]),
+            c:true}}},
+          {ty:'fl', nm:'fill', o:{a:0,k:100}, c:{a:0,k:fillC}, r:1},
+          {ty:'tr', p:{a:0,k:[0,0]}, a:{a:0,k:[0,0]}, s:{a:0,k:[100,100]}, r:{a:0,k:0}, o:{a:0,k:100}, sk:{a:0,k:0}, sa:{a:0,k:0}}
+        ]
+      }],
+      ip:0, op:totalFrames, st:0, bm:0
+    });
+  }
+  layers.push({
+    ddd:0, ind:maxStars+1, ty:1, nm:'Background', sr:1,
+    ks:{o:{a:0,k:100},r:{a:0,k:0},p:{a:0,k:[W/2,H/2,0]},a:{a:0,k:[W/2,H/2,0]},s:{a:0,k:[100,100,100]}},
+    ao:0, sw:W, sh:H, sc:bgHex[firstSettings.bgClass]||'#0e0e0f',
+    ip:0, op:totalFrames, st:0, bm:0
+  });
+
+  const lottie = {v:'5.7.4', fr:fps, ip:0, op:totalFrames, w:W, h:H,
+                  nm:`Star Field Chain (${n} states)`, ddd:0, assets:[], layers};
+  const json = JSON.stringify(lottie);
+  const blob = new Blob([json], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=`star-chain-${n}states.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function chainMorphArrived() {
