@@ -570,15 +570,30 @@ function loop() {
   tickPlayback();
   if (seqActive && !playbackActive) tickSeqHold();
   if (playbackActive && playbackBlend < 1) {
-    const eb = easeInOut(Math.max(0, Math.min(1, playbackBlend)));
-    if (isOrbitStyle(playbackFromAnim) && isOrbitStyle(playbackToAnim) && starMorphFromPos) {
-      drawOrbitPositionMorph(eb);
-    } else if (playbackFromAnim !== playbackToAnim) {
-      ct.save(); ct.globalAlpha = 1 - eb; drawAnimStyle(playbackFromAnim, 1); ct.restore();
-      ct.save(); ct.globalAlpha = eb;     drawAnimStyle(playbackToAnim,   1); ct.restore();
-    } else {
-      drawAnimStyle(currentAnim, 1);
+    // Two-phase zoom morph: phase1 = FROM zooms out, phase2 = TO zooms in
+    const pb = playbackBlend;
+    const e1 = easeInOut(Math.min(1, pb * 2));          // 0→1 in first half
+    const e2 = easeInOut(Math.max(0, (pb - 0.5) * 2)); // 0→1 in second half
+    const sv = captureSettings();
+    if (e1 < 1) {
+      const scl = 1 - e1;
+      ct.save();
+      ct.translate(CX, CY); ct.scale(scl, scl); ct.translate(-CX, -CY);
+      ct.globalAlpha = scl;
+      applyGlobals(playbackFromSettings);
+      drawAnimStyle(playbackFromAnim, 1);
+      ct.restore(); ct.globalAlpha = 1;
     }
+    if (e2 > 0) {
+      const scl = e2;
+      ct.save();
+      ct.translate(CX, CY); ct.scale(scl, scl); ct.translate(-CX, -CY);
+      ct.globalAlpha = scl;
+      applyGlobals(playbackToSettings);
+      drawAnimStyle(playbackToAnim, 1);
+      ct.restore(); ct.globalAlpha = 1;
+    }
+    applyGlobals(sv);
   } else {
     drawAnimStyle(currentAnim, 1);
   }
@@ -2126,10 +2141,6 @@ function tickPlayback() {
   if (!playbackActive || presets.length === 0) return;
   if (playbackBlend < 1) {
     playbackBlend = Math.min(1, playbackBlend + PLAYBACK_MORPH_SPEED);
-    const eb = easeInOut(playbackBlend);
-    const lerped = lerpAllSettings(playbackFromSettings, playbackToSettings, eb);
-    applyGlobals(lerped);
-    currentVisualSettings = lerped;
     if (playbackBlend >= 1) {
       // Fully arrived at destination — apply ALL settings (bg, fmt, toggles too)
       applySettings(playbackToSettings);
