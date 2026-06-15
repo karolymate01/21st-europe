@@ -1004,38 +1004,47 @@ function drawOrbitPositionMorph(eb) {
   const toCount   = (playbackToSettings?.starCount) ? Math.round(playbackToSettings.starCount) : starCount;
   const drawN     = Math.max(fromCount, toCount);
 
-  // Save/restore starCount so drawAnimStyle isn't affected mid-morph
-  const savedCount = starCount;
+  // Pre-compute TO params for all destination stars (needed for convergence targets)
+  const toParams = [];
+  for (let i = 0; i < toCount; i++) toParams[i] = computeToParams(i);
 
   for (let i = 0; i < drawN; i++) {
-    const from = starMorphFromPos?.[i] ?? null;
-    const to   = computeToParams(i);    // returns {x,y,rot,sz,fa} or {fa:0,sz:0} for extra
     let x, y, rot, sz, fa;
 
-    if (from && i < toCount) {
-      // Star exists in both: morph position + size
+    if (i < fromCount && i < toCount) {
+      // Star exists in both: straight position morph
+      const from = starMorphFromPos[i];
+      const to   = toParams[i];
       x   = lerp(from.x,   to.x,   eb);
       y   = lerp(from.y,   to.y,   eb);
       rot = lerpAngle(from.rot, to.rot, eb);
       sz  = lerp(from.sz,  to.sz,  eb);
       fa  = lerp(from.fa,  to.fa,  eb);
-    } else if (from) {
-      // Extra FROM star: shrink in place
-      x = from.x; y = from.y; rot = from.rot;
-      sz = lerp(from.sz, 0, eb);
-      fa = lerp(from.fa, 0, eb);
+
+    } else if (i < fromCount) {
+      // Extra FROM star: converge toward the nearest TO star, then vanish
+      const from   = starMorphFromPos[i];
+      const target = toParams[i % toCount]; // merge into nearest TO star
+      x   = lerp(from.x,   target.x, eb);
+      y   = lerp(from.y,   target.y, eb);
+      rot = lerpAngle(from.rot, target.rot, eb);
+      sz  = lerp(from.sz, 0, eb);
+      fa  = lerp(from.fa, 0, eb);
+
     } else {
-      // New TO star: grow at destination
-      x = to.x; y = to.y; rot = to.rot;
-      sz = lerp(0, to.sz, eb);
-      fa = lerp(0, to.fa, eb);
+      // New TO star: emerge from the source star it maps to
+      const source = starMorphFromPos[i % fromCount]; // split off from nearest FROM star
+      const to     = toParams[i];
+      x   = lerp(source.x,   to.x,   eb);
+      y   = lerp(source.y,   to.y,   eb);
+      rot = lerpAngle(source.rot, to.rot, eb);
+      sz  = lerp(0,       to.sz,  eb);
+      fa  = lerp(0,       to.fa,  eb);
     }
 
     if (sz > 0.3) drawStar(x, y, sz, sz * innerRatio, fixAxis ? 0 : rot, fa, 0, 0.9);
     starCurrentPos[i] = {x, y, rot, sz, fa};
   }
-
-  starCount = savedCount;
 }
 
 function drawAnimStyle(style,eb) {
