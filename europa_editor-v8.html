@@ -597,7 +597,13 @@ function computeToParams(i) {
   const sv = { starCount, baseSize, orbitRadius, innerRatio, opacity, movementAmp, pulseAmt, spinAmt, axisPull, stabilizePos, stabilize, fixAxis, fixSize };
   const savedStyle = animStyleForGetParams;
   const s = playbackToSettings || {};
-  starCount = Math.round(s.starCount ?? starCount); baseSize = s.baseSize ?? baseSize;
+  const toCount = Math.round(s.starCount ?? starCount);
+  // Star doesn't exist in destination: fade out in-place
+  if (i >= toCount) {
+    const from = (starMorphFromPos && starMorphFromPos[i]) ? starMorphFromPos[i] : {x:CX, y:CY, rot:0, sz:sv.baseSize, fa:0};
+    return {...from, fa: 0};
+  }
+  starCount = toCount; baseSize = s.baseSize ?? baseSize;
   orbitRadius = s.orbitRadius ?? orbitRadius; innerRatio = s.innerRatio ?? innerRatio;
   opacity = s.opacity ?? opacity; movementAmp = s.movementAmp ?? movementAmp;
   pulseAmt = s.pulseAmt ?? pulseAmt; spinAmt = s.spinAmt ?? spinAmt;
@@ -1006,8 +1012,9 @@ function drawOrbitPositionMorph(eb) {
   const toCount = (playbackToSettings && playbackToSettings.starCount) ? Math.round(playbackToSettings.starCount) : starCount;
   const drawN = Math.max(starCount, toCount);
   for (let i=0; i<drawN; i++) {
-    const from = (starMorphFromPos && starMorphFromPos[i]) ? starMorphFromPos[i] : {x:CX, y:CY, rot:0, sz:baseSize, fa:0};
     const to   = computeToParams(i);
+    // New star in destination: fade in at destination position
+    const from = (starMorphFromPos && starMorphFromPos[i]) ? starMorphFromPos[i] : {...to, fa: 0};
     const x   = lerp(from.x,   to.x,   eb);
     const y   = lerp(from.y,   to.y,   eb);
     const rot = lerpAngle(from.rot, to.rot, eb);
@@ -2057,20 +2064,35 @@ function tickSeqPhaseArrived() {
 function playSequence(id) {
   const p = presets.find(x => x.id === id); if (!p) return;
   pausePlayback();
+  applySettings(IDLE_SETTINGS); applyFmt(); currentAnim = 'spin';
   seqActive=true; seqAllPresets=false; seqPresetId=id;
-  seqPhase='idle1'; seqTimer=SEQ_IDLE_FRAMES;
-  playbackIndex=presets.indexOf(p); activePresetId=id;
-  applySettings(IDLE_SETTINGS); applyFmt(); currentAnim='spin';
+  seqPhase='morph_to';
+  starMorphFromPos = starCurrentPos.slice(0, starCount).map(q => ({...q}));
+  playbackFromSettings = Object.assign({}, IDLE_SETTINGS);
+  playbackFromAnim = 'spin';
+  playbackToSettings = p.settings;
+  playbackToAnim = p.settings.currentAnim || 'spin';
+  playbackBlend = 0; playbackHold = 0;
+  playbackIndex = presets.indexOf(p); activePresetId = id;
+  playbackActive = true;
   renderPresets();
 }
 
 function playAll() {
   if (!presets.length) return;
   pausePlayback();
+  applySettings(IDLE_SETTINGS); applyFmt(); currentAnim = 'spin';
   seqActive=true; seqAllPresets=true; seqAllIndex=0;
-  seqPresetId=presets[0].id; seqPhase='idle1'; seqTimer=SEQ_IDLE_FRAMES;
-  playbackIndex=0; activePresetId=presets[0].id;
-  applySettings(IDLE_SETTINGS); applyFmt(); currentAnim='spin';
+  const p = presets[0];
+  seqPresetId=p.id; seqPhase='morph_to';
+  starMorphFromPos = starCurrentPos.slice(0, starCount).map(q => ({...q}));
+  playbackFromSettings = Object.assign({}, IDLE_SETTINGS);
+  playbackFromAnim = 'spin';
+  playbackToSettings = p.settings;
+  playbackToAnim = p.settings.currentAnim || 'spin';
+  playbackBlend = 0; playbackHold = 0;
+  playbackIndex = 0; activePresetId = p.id;
+  playbackActive = true;
   renderPresets();
 }
 
