@@ -598,10 +598,10 @@ function computeToParams(i) {
   const savedStyle = animStyleForGetParams;
   const s = playbackToSettings || {};
   const toCount = Math.round(s.starCount ?? starCount);
-  // Star doesn't exist in destination: fade out in-place
+  // Star doesn't exist in destination: shrink + fade out in-place ("kizoomol")
   if (i >= toCount) {
     const from = (starMorphFromPos && starMorphFromPos[i]) ? starMorphFromPos[i] : {x:CX, y:CY, rot:0, sz:sv.baseSize, fa:0};
-    return {...from, fa: 0};
+    return {...from, fa: 0, sz: 0};
   }
   starCount = toCount; baseSize = s.baseSize ?? baseSize;
   orbitRadius = s.orbitRadius ?? orbitRadius; innerRatio = s.innerRatio ?? innerRatio;
@@ -1013,8 +1013,8 @@ function drawOrbitPositionMorph(eb) {
   const drawN = Math.max(starCount, toCount);
   for (let i=0; i<drawN; i++) {
     const to   = computeToParams(i);
-    // New star in destination: fade in at destination position
-    const from = (starMorphFromPos && starMorphFromPos[i]) ? starMorphFromPos[i] : {...to, fa: 0};
+    // New star in destination: zoom in from size 0 at destination position
+    const from = (starMorphFromPos && starMorphFromPos[i]) ? starMorphFromPos[i] : {...to, fa: 0, sz: 0};
     const x   = lerp(from.x,   to.x,   eb);
     const y   = lerp(from.y,   to.y,   eb);
     const rot = lerpAngle(from.rot, to.rot, eb);
